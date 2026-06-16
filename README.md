@@ -1,6 +1,6 @@
-# linksanity
+# linksanity (🏀17)
 
-Detect broken links in Markdown, reStructuredText, and HTML documentation.
+Detect broken links and redirects in Markdown, reStructuredText, and HTML documentation.
 
 ```
 $ linksanity scan ./docs/

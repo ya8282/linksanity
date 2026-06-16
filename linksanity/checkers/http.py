@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 from urllib.parse import urlparse
 
 import httpx
@@ -13,6 +14,20 @@ _RETRY_ON = {429, 503}
 _FALLBACK_ON = {405}
 _TIMEOUT = httpx.Timeout(10.0)
 _HEADERS = {"User-Agent": "linksanity/0.1 link-checker (+https://github.com/linksanity)"}
+
+# Hostnames that are always private regardless of DNS resolution
+_PRIVATE_HOSTNAMES = frozenset({"localhost", "metadata.google.internal"})
+
+
+def _is_private_host(hostname: str) -> bool:
+    """Return True if hostname is a loopback, link-local, or private address."""
+    if hostname.lower() in _PRIVATE_HOSTNAMES:
+        return True
+    try:
+        addr = ipaddress.ip_address(hostname)
+        return addr.is_loopback or addr.is_link_local or addr.is_private
+    except ValueError:
+        return False
 
 
 async def check(
@@ -32,7 +47,17 @@ async def check(
     2. On 405 Method Not Allowed, retry with GET + stream (no body download).
     3. On 429/503, retry up to `retries` times with exponential backoff.
     """
-    domain = urlparse(url).netloc.lower()
+    parsed = urlparse(url)
+    domain = parsed.netloc.lower()
+    hostname = parsed.hostname or ""
+
+    if _is_private_host(hostname):
+        return LinkResult(
+            source_file=source_file, line=line, url=url,
+            link_type=link_type, status=LinkStatus.SKIPPED,
+            error="skipped: private/loopback address",
+        )
+
     if ignore_domains and _domain_match(domain, ignore_domains):
         return LinkResult(
             source_file=source_file, line=line, url=url,

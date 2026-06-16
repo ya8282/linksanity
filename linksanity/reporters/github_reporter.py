@@ -7,6 +7,7 @@ Deduplicates by checking for an existing open issue with the same title prefix.
 from __future__ import annotations
 
 import os
+import re
 from itertools import groupby
 from operator import attrgetter
 
@@ -18,6 +19,7 @@ from linksanity.queue import LinkResult, LinkStatus
 _API = "https://api.github.com"
 _TITLE_PREFIX = "[linksanity]"
 _BROKEN = {LinkStatus.BROKEN, LinkStatus.ERROR}
+_REPO_RE = re.compile(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$")
 
 
 def report(results: list[LinkResult], config: Config) -> None:
@@ -35,6 +37,8 @@ def report(results: list[LinkResult], config: Config) -> None:
     repo = config.github_repo
     if not repo:
         raise ValueError("github_repo must be set when github_issue=True")
+    if not _REPO_RE.match(repo):
+        raise ValueError(f"github_repo must be in OWNER/REPO format, got: {repo!r}")
 
     title = f"{_TITLE_PREFIX} {len(broken)} broken link(s) found"
     body = _build_body(broken)

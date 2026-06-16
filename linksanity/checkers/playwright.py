@@ -140,6 +140,11 @@ async def crawl_page(
                         link_type=link_type, status=LinkStatus.ERROR,
                         error="no response",
                     ), []
+                # Wait for JS to finish rendering navigation (SPAs build links client-side)
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=5000)
+                except PlaywrightError:
+                    pass  # Proceed with whatever rendered; persistent WS connections never go idle
                 code = response.status
                 resolved = page.url
                 was_redirected = _strip(resolved) != _strip(url)
@@ -155,8 +160,8 @@ async def crawl_page(
                     http_code=code,
                     resolved_url=resolved if was_redirected else None,
                 )
-                # Only extract links from reachable pages
-                if status == LinkStatus.OK:
+                # Extract links from any reachable page, including redirects
+                if status in (LinkStatus.OK, LinkStatus.REDIRECT):
                     hrefs: list[str] = await page.eval_on_selector_all(
                         "a[href]",
                         "els => els.map(e => e.href).filter(h => h)",

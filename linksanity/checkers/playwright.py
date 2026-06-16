@@ -3,11 +3,36 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from urllib.parse import urlparse
 
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 
 _SKIP_SCHEMES = ("mailto:", "javascript:", "data:", "blob:")
+
+# Well-known analytics and tracking domains. Requests to these are aborted
+# when --block-analytics is set, speeding up crawls and suppressing false hits.
+ANALYTICS_DOMAINS: frozenset[str] = frozenset({
+    "google-analytics.com",
+    "analytics.google.com",
+    "googletagmanager.com",
+    "googletagservices.com",
+    "doubleclick.net",
+    "hotjar.com",
+    "segment.com",
+    "cdn.segment.com",
+    "api.segment.io",
+    "mixpanel.com",
+    "amplitude.com",
+    "heap.io",
+    "heapanalytics.com",
+    "fullstory.com",
+    "clarity.ms",
+    "plausible.io",
+    "intercom.io",
+    "intercomcdn.com",
+    "widget.intercom.io",
+})
 
 
 def _require_playwright() -> None:
@@ -114,6 +139,7 @@ async def crawl_page(
     *,
     semaphore: asyncio.Semaphore | None = None,
     timeout: int = 10,
+    block_domains: frozenset[str] | None = None,
 ) -> tuple[LinkResult, list[str]]:
     """Visit a page, check its reachability, and return (result, hrefs).
 
@@ -128,6 +154,17 @@ async def crawl_page(
         browser = await pw.chromium.launch(headless=True)
         try:
             page = await browser.new_page()
+            if block_domains:
+                from playwright.async_api import Route
+
+                async def _block(route: Route) -> None:
+                    netloc = urlparse(route.request.url).netloc.lower()
+                    if any(netloc == d or netloc.endswith("." + d) for d in block_domains):
+                        await route.abort()
+                    else:
+                        await route.continue_()
+
+                await page.route("**/*", _block)
             try:
                 response = await page.goto(
                     url,
@@ -141,10 +178,8 @@ async def crawl_page(
                         error="no response",
                     ), []
                 # Wait for JS to finish rendering navigation (SPAs build links client-side)
-                try:
+                with contextlib.suppress(PlaywrightError):
                     await page.wait_for_load_state("networkidle", timeout=5000)
-                except PlaywrightError:
-                    pass  # Proceed with whatever rendered; persistent WS connections never go idle
                 code = response.status
                 resolved = page.url
                 was_redirected = _strip(resolved) != _strip(url)

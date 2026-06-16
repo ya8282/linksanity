@@ -17,6 +17,7 @@ class Config:
     max_pages: int = 500
     ignore_domains: set[str] = field(default_factory=set)
     js_domains: set[str] = field(default_factory=set)
+    block_analytics: bool = False
     output: str | None = None
     report: str | None = None
     github_issue: bool = False
@@ -70,6 +71,7 @@ def load_config(
         max_pages=_int(data, "max_pages", Config.max_pages),
         ignore_domains=_domain_set("ignore_domains"),
         js_domains=_domain_set("js_domains"),
+        block_analytics=_bool(data, "block_analytics", Config.block_analytics),
         format=_str(data, "format", Config.format),
     )
 

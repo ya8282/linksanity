@@ -148,6 +148,9 @@ def crawl(
     ignore_domains: str | None = typer.Option(
         None, help="File listing domains to skip (one per line)"
     ),
+    block_analytics: bool = typer.Option(
+        False, help="Block and ignore requests to common analytics/tracking domains"
+    ),
     format: str = typer.Option("console", help="Output format: console, json, csv"),
     output: str | None = typer.Option(None, help="Write results to this file"),
     report_path: str | None = typer.Option(
@@ -193,6 +196,8 @@ def crawl(
     ignore_set = _read_domains(ignore_domains)
     if ignore_set:
         overrides["ignore_domains"] = ignore_set
+    if block_analytics:
+        overrides["block_analytics"] = True
 
     config_path = Path(config_file) if config_file else None
     if config_path is None:

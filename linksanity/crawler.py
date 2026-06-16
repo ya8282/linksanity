@@ -6,7 +6,7 @@ import asyncio
 from urllib.parse import urlparse
 
 from linksanity.checkers import http
-from linksanity.checkers.playwright import crawl_page, scope_filter
+from linksanity.checkers.playwright import ANALYTICS_DOMAINS, crawl_page, scope_filter
 from linksanity.config import Config
 from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
 
@@ -19,6 +19,11 @@ async def run_crawl(start_url: str, config: Config) -> LinkQueue:
 
     pw_sem = asyncio.Semaphore(config.playwright_workers)
     http_sem = asyncio.Semaphore(config.workers)
+    block_domains = ANALYTICS_DOMAINS if config.block_analytics else None
+    # Merge analytics domains into the HTTP ignore set so they're skipped as external links too
+    effective_ignore = (
+        config.ignore_domains | ANALYTICS_DOMAINS if config.block_analytics else config.ignore_domains
+    )
 
     # BFS: Playwright-crawl same-domain pages in batches
     while frontier and len(visited) < config.max_pages:
@@ -39,6 +44,7 @@ async def run_crawl(start_url: str, config: Config) -> LinkQueue:
                     crawl_page(
                         url, start_url, 0, LinkType.EXTERNAL,
                         semaphore=pw_sem, timeout=config.timeout,
+                        block_domains=block_domains,
                     )
                     for url in batch
                 ],
@@ -77,7 +83,10 @@ async def run_crawl(start_url: str, config: Config) -> LinkQueue:
     ]
     if external:
         ext_results = await asyncio.gather(
-            *[_http_check(url, src, ln, lt, config, http_sem) for url, src, ln, lt in external]
+            *[
+                _http_check(url, src, ln, lt, config, http_sem, effective_ignore)
+                for url, src, ln, lt in external
+            ]
         )
         for r in ext_results:
             queue.record(r)
@@ -92,11 +101,12 @@ async def _http_check(
     lt: LinkType,
     config: Config,
     sem: asyncio.Semaphore,
+    ignore_domains: set[str],
 ) -> LinkResult:
     async with sem:
         return await http.check(
             url, src, line, lt,
-            ignore_domains=config.ignore_domains,
+            ignore_domains=ignore_domains,
             timeout=config.timeout,
             retries=config.retry,
         )

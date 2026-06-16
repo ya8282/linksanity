@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,12 +18,25 @@ class Config:
     max_pages: int = 500
     ignore_domains: set[str] = field(default_factory=set)
     js_domains: set[str] = field(default_factory=set)
+    skip_urls: set[str] = field(default_factory=set)
     block_analytics: bool = False
     output: str | None = None
     report: str | None = None
     github_issue: bool = False
     github_repo: str | None = None
     format: str = "console"
+
+
+def url_is_skipped(url: str, patterns: set[str]) -> bool:
+    """Return True if url matches any pattern in the skip_urls allowlist.
+
+    Patterns support fnmatch wildcards: * matches any sequence of characters.
+    Examples:
+      https://example.com/private/page   — exact match
+      https://example.com/private/*      — all pages under /private/
+      https://staging.example.com/*      — entire staging site
+    """
+    return any(fnmatch.fnmatch(url, pattern) for pattern in patterns)
 
 
 def _load_toml(path: Path) -> dict[str, object]:
@@ -62,6 +76,12 @@ def load_config(
             return {str(d).lower() for d in raw}
         return set()
 
+    def _url_set(key: str) -> set[str]:
+        raw = data.get(key, [])
+        if isinstance(raw, list):
+            return {str(u) for u in raw}
+        return set()
+
     cfg = Config(
         workers=_int(data, "workers", Config.workers),
         playwright_workers=_int(data, "playwright_workers", Config.playwright_workers),
@@ -71,6 +91,7 @@ def load_config(
         max_pages=_int(data, "max_pages", Config.max_pages),
         ignore_domains=_domain_set("ignore_domains"),
         js_domains=_domain_set("js_domains"),
+        skip_urls=_url_set("skip_urls"),
         block_analytics=_bool(data, "block_analytics", Config.block_analytics),
         format=_str(data, "format", Config.format),
     )

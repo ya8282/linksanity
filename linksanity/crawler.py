@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from linksanity.checkers import http
 from linksanity.checkers.playwright import ANALYTICS_DOMAINS, crawl_page, scope_filter
-from linksanity.config import Config
+from linksanity.config import Config, url_is_skipped
 from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
 
 
@@ -68,18 +68,25 @@ async def run_crawl(start_url: str, config: Config) -> LinkQueue:
 
             same_domain = set(scope_filter(links, start_url))
             for link in links:
-                if link in same_domain:
+                if config.skip_urls and url_is_skipped(link, config.skip_urls):
+                    queue.add(link, url, 0, LinkType.EXTERNAL)
+                    queue.record(LinkResult(
+                        source_file=url, line=0, url=link,
+                        link_type=LinkType.EXTERNAL, status=LinkStatus.SKIPPED,
+                    ))
+                elif link in same_domain:
                     norm = _norm(link)
                     if norm not in visited and norm not in frontier:
                         frontier.append(norm)
                 else:
                     queue.add(link, url, 0, LinkType.EXTERNAL)
 
-    # HTTP-check all external links (not crawled pages)
+    # HTTP-check all external links (not crawled pages, not already skipped)
     external = [
         (url, src, line, lt)
         for url, src, line, lt in queue.pending()
         if url not in visited
+        and not (config.skip_urls and url_is_skipped(url, config.skip_urls))
     ]
     if external:
         ext_results = await asyncio.gather(

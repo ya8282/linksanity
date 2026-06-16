@@ -6,8 +6,8 @@ import asyncio
 from urllib.parse import urlparse
 
 from linksanity.checkers import filesystem, http
-from linksanity.config import Config
-from linksanity.queue import LinkResult, LinkType
+from linksanity.config import Config, url_is_skipped
+from linksanity.queue import LinkResult, LinkStatus, LinkType
 
 
 def classify(url: str) -> LinkType:
@@ -42,6 +42,12 @@ async def dispatch(
         return filesystem.check(
             url, source_file, line, link_type,
             check_anchors=config.check_anchors,
+        )
+
+    if config.skip_urls and url_is_skipped(url, config.skip_urls):
+        return LinkResult(
+            source_file=source_file, line=line, url=url,
+            link_type=link_type, status=LinkStatus.SKIPPED,
         )
 
     domain = urlparse(url).netloc.lower()

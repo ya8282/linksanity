@@ -47,6 +47,9 @@ def scan(
     js_domains: str | None = typer.Option(
         None, help="File listing domains that require a browser (Playwright)"
     ),
+    skip_urls: str | None = typer.Option(
+        None, help="File listing URLs or patterns to skip, e.g. auth-gated pages (one per line, * wildcards ok)"
+    ),
     format: str = typer.Option("console", help="Output format: console, json, csv"),
     output: str | None = typer.Option(None, help="Write results to this file"),
     report_path: str | None = typer.Option(
@@ -79,13 +82,16 @@ def scan(
         overrides["github_repo"] = repo
     overrides["format"] = format
 
-    # Load ignore/js domain files
+    # Load ignore/js domain files and skip URL file
     ignore_set = _read_domains(ignore_domains)
     js_set = _read_domains(js_domains)
+    skip_set = _read_domains(skip_urls)
     if ignore_set:
         overrides["ignore_domains"] = ignore_set
     if js_set:
         overrides["js_domains"] = js_set
+    if skip_set:
+        overrides["skip_urls"] = skip_set
 
     config_path = Path(config_file) if config_file else None
     if config_path is None:
@@ -148,6 +154,9 @@ def crawl(
     ignore_domains: str | None = typer.Option(
         None, help="File listing domains to skip (one per line)"
     ),
+    skip_urls: str | None = typer.Option(
+        None, help="File listing URLs or patterns to skip, e.g. auth-gated pages (one per line, * wildcards ok)"
+    ),
     block_analytics: bool = typer.Option(
         False, help="Block and ignore requests to common analytics/tracking domains"
     ),
@@ -194,8 +203,11 @@ def crawl(
     overrides["format"] = format
 
     ignore_set = _read_domains(ignore_domains)
+    skip_set = _read_domains(skip_urls)
     if ignore_set:
         overrides["ignore_domains"] = ignore_set
+    if skip_set:
+        overrides["skip_urls"] = skip_set
     if block_analytics:
         overrides["block_analytics"] = True
 

@@ -1,0 +1,5 @@
+# Example linksanity.toml — project-level config
+workers = 8
+timeout = 15
+ignore_domains = ["linkedin.com", "twitter.com"]
+js_domains = ["docs.example.com"]

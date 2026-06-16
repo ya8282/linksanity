@@ -1,0 +1,96 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "linksanity"
+version = "0.1.0"
+description = "Detect broken links in Markdown, reStructuredText, and HTML documentation"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "linksanity contributors" }]
+keywords = ["documentation", "link-checker", "markdown", "rst", "broken-links", "html"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Documentation",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
+dependencies = [
+    "typer>=0.12",
+    "httpx[http2]>=0.27",
+    "markdown-it-py>=3.0",
+    "docutils>=0.20",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "rich>=13.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/linksanity/linksanity"
+"Bug Tracker" = "https://github.com/linksanity/linksanity/issues"
+Changelog = "https://github.com/linksanity/linksanity/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+browser = ["playwright>=1.40"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "respx>=0.21",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "types-beautifulsoup4",
+    "types-docutils",
+]
+
+[project.scripts]
+linksanity = "linksanity.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["linksanity"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = ["playwright", "playwright.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=linksanity --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+omit = ["tests/*", "linksanity/checkers/playwright.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "@overload",
+]
+fail_under = 80

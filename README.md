@@ -1,6 +1,6 @@
 # linksanity 🏀
 
-[![PyPI version](https://shields.io)](https://pypi.org)
+[![PyPI downloads](https://shields.io)](https://pypi.org)
 
 Detect broken links and redirects in Markdown, reStructuredText, and HTML content.
 

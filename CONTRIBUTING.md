@@ -5,7 +5,7 @@ Thanks for your interest in contributing!
 ## Setup
 
 ```bash
-git clone https://github.com/linksanity/linksanity
+git clone https://github.com/ya8282/linksanity
 cd linksanity
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,browser]"
@@ -46,8 +46,7 @@ Both must pass before opening a PR.
 
 ## Reporting bugs
 
-Open an issue at https://github.com/linksanity/linksanity/issues with:
-- linksanity version (`linksanity --version`)
+Open an issue at https://github.com/ya8282/linksanity/issues with:
 - Python version
 - Command you ran
 - Expected vs. actual output

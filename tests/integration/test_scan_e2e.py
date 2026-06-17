@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 
 import httpx
-import pytest
 import respx
 from typer.testing import CliRunner
 

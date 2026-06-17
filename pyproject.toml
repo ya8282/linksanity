@@ -38,9 +38,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/linksanity/linksanity"
-"Bug Tracker" = "https://github.com/linksanity/linksanity/issues"
-Changelog = "https://github.com/linksanity/linksanity/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/ya8282/linksanity"
+"Bug Tracker" = "https://github.com/ya8282/linksanity/issues"
 
 [project.optional-dependencies]
 browser = ["playwright>=1.40"]

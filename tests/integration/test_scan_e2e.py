@@ -5,12 +5,11 @@ from __future__ import annotations
 import csv
 import io
 import json
-import threading
-import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
+import httpx
 import pytest
+import respx
 from typer.testing import CliRunner
 
 from linksanity.cli import app
@@ -182,67 +181,41 @@ class TestScanOutputFormats:
         assert data[0]["status"] == "broken"
 
 
-# ── HTTP edge cases (local server) ────────────────────────────────────────────
-
-class _SilentHandler(BaseHTTPRequestHandler):
-    """Handles HEAD/GET; routes /redirect → 301, /final → 200, /405 → 405, * → 404."""
-
-    def _send(self, code: int, location: str = "") -> None:
-        self.send_response(code)
-        if location:
-            self.send_header("Location", location)
-        self.end_headers()
-
-    def do_HEAD(self) -> None:
-        base = f"http://{self.server.server_address[0]}:{self.server.server_address[1]}"
-        if self.path == "/redirect":
-            self._send(301, f"{base}/final")
-        elif self.path == "/final":
-            self._send(200)
-        elif self.path == "/405":
-            self._send(405)
-        else:
-            self._send(404)
-
-    def do_GET(self) -> None:
-        if self.path == "/405":
-            self._send(200)
-        else:
-            self._send(404)
-
-    def log_message(self, *args: object) -> None:
-        pass
-
-
-@pytest.fixture(scope="module")
-def http_server() -> str:  # type: ignore[return]
-    server = HTTPServer(("127.0.0.1", 0), _SilentHandler)
-    port = server.server_address[1]
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    time.sleep(0.05)
-    yield f"http://127.0.0.1:{port}"
-    server.shutdown()
-
+# ── HTTP edge cases (mocked via respx) ────────────────────────────────────────
 
 class TestScanHTTPEdgeCases:
-    def test_redirect_detected(self, tmp_path: Path, http_server: str) -> None:
+    @respx.mock
+    def test_redirect_detected(self, tmp_path: Path) -> None:
+        # Mock a redirect: /redirect → /final, both resolve via head
+        respx.head("https://example.com/redirect").mock(
+            return_value=httpx.Response(301, headers={"location": "https://example.com/final"})
+        )
+        respx.head("https://example.com/final").mock(return_value=httpx.Response(200))
+
         f = tmp_path / "a.md"
-        f.write_text(f"[link]({http_server}/redirect)\n")
+        f.write_text("[link](https://example.com/redirect)\n")
         result = runner.invoke(app, ["scan", str(f)])
         assert result.exit_code == 0, result.output  # redirect is not a broken link
         assert "REDIRECT" in result.output
 
-    def test_404_is_broken(self, tmp_path: Path, http_server: str) -> None:
+    @respx.mock
+    def test_404_is_broken(self, tmp_path: Path) -> None:
+        # Mock a 404 response
+        respx.head("https://example.com/missing").mock(return_value=httpx.Response(404))
+
         f = tmp_path / "a.md"
-        f.write_text(f"[link]({http_server}/missing)\n")
+        f.write_text("[link](https://example.com/missing)\n")
         result = runner.invoke(app, ["scan", str(f)])
         assert result.exit_code == 1
 
-    def test_head_405_fallback_to_get(self, tmp_path: Path, http_server: str) -> None:
+    @respx.mock
+    def test_head_405_fallback_to_get(self, tmp_path: Path) -> None:
         # /405 returns 405 for HEAD, 200 for GET — should resolve as OK
+        respx.head("https://example.com/405").mock(return_value=httpx.Response(405))
+        respx.get("https://example.com/405").mock(return_value=httpx.Response(200))
+
         f = tmp_path / "a.md"
-        f.write_text(f"[link]({http_server}/405)\n")
+        f.write_text("[link](https://example.com/405)\n")
         result = runner.invoke(app, ["scan", str(f)])
         assert result.exit_code == 0, result.output
 

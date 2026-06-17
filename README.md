@@ -1,6 +1,9 @@
 # linksanity 🏀
 
-Detect broken links and redirects in Markdown, reStructuredText, and HTML documentation.
+Detect broken links and redirects in Markdown, reStructuredText, and HTML content.
+
+Don't let dead URLs leave you hanging on the rim! Catch broken docs links in the Knick of time with Linksanity.
+This tool keeps your documentation or web content game flawless, ensuring you never drop the ball on your readers.
 
 ```
 $ linksanity scan ./docs/

@@ -27,13 +27,25 @@ ok=38   broken=1   redirect=1   skipped=0
 
 ```bash
 pip install linksanity
+```
 
-# Optional: browser support for JS-rendered pages
+For JS-rendered pages (Playwright headless browser):
+
+```bash
 pip install "linksanity[browser]"
 playwright install chromium
 ```
 
 Requires Python 3.11+.
+
+**From source:**
+
+```bash
+git clone https://github.com/ya8282/linksanity
+cd linksanity
+pip install -e ".[dev,browser]"
+playwright install chromium
+```
 
 ## Quick start
 

@@ -234,21 +234,27 @@ Each item in the output array has:
 
 ### Python subprocess usage
 
+Use this when you want to drive linksanity from a Python script or agent — for example, to file tickets, send alerts, or trigger auto-repair after a scan. linksanity doesn't expose a public Python API, so `subprocess.run` is the correct integration point.
+
+`result.returncode` is the fast path: check it before touching the file. If it's `2`, something went wrong with invocation — read `result.stderr` for the error message rather than trying to parse the output file.
+
 ```python
 import json
 import subprocess
 
 result = subprocess.run(
     ["linksanity", "scan", "./docs/", "--format", "json", "--output", "results.json"],
-    capture_output=True,
+    capture_output=True,  # stdout goes to the file; stderr carries error messages
     text=True,
 )
 
-exit_code = result.returncode  # 0 = clean, 1 = broken, 2 = error
+if result.returncode == 2:
+    raise RuntimeError(f"linksanity invocation error: {result.stderr.strip()}")
 
 with open("results.json") as f:
     links = json.load(f)
 
+# result.returncode == 1 means broken links exist; iterate to act on them
 broken = [r for r in links if r["status"] == "broken"]
 ```
 

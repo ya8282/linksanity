@@ -141,6 +141,26 @@ class TestDispatchHTTP:
         )
         assert result.status == LinkStatus.SKIPPED
 
+    @pytest.mark.asyncio
+    async def test_skip_urls_pattern_skipped(
+        self, sems: tuple
+    ) -> None:
+        config = Config(skip_urls={"https://example.com/private/*"}, retry=0, timeout=5)
+        result = await dispatch(
+            "https://example.com/private/page", "f", 1, LinkType.EXTERNAL, config, *sems
+        )
+        assert result.status == LinkStatus.SKIPPED
+
+    @pytest.mark.asyncio
+    async def test_skip_urls_exact_match_skipped(
+        self, sems: tuple
+    ) -> None:
+        config = Config(skip_urls={"https://example.com/login"}, retry=0, timeout=5)
+        result = await dispatch(
+            "https://example.com/login", "f", 1, LinkType.EXTERNAL, config, *sems
+        )
+        assert result.status == LinkStatus.SKIPPED
+
 
 # ── dispatch() — Playwright route ─────────────────────────────────────────────
 

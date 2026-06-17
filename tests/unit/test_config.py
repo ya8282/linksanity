@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from linksanity.config import Config, load_config
+from linksanity.config import Config, load_config, url_is_skipped
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
@@ -59,3 +59,59 @@ class TestCliOverrides:
     def test_format_override(self, fmt: str) -> None:
         cfg = load_config(format=fmt)
         assert cfg.format == fmt
+
+
+class TestSkipUrls:
+    def test_skip_urls_default_empty(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "none.toml")
+        assert cfg.skip_urls == set()
+
+    def test_skip_urls_override_with_set(self) -> None:
+        patterns = {"https://example.com/auth/*", "https://staging.example.com/*"}
+        cfg = load_config(skip_urls=patterns)
+        assert cfg.skip_urls == patterns
+
+    def test_skip_urls_patterns_preserved_case(self) -> None:
+        patterns = {"https://Example.com/Auth/*"}
+        cfg = load_config(skip_urls=patterns)
+        assert "https://Example.com/Auth/*" in cfg.skip_urls
+
+
+class TestBlockAnalytics:
+    def test_block_analytics_default_false(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "none.toml")
+        assert cfg.block_analytics is False
+
+    def test_block_analytics_override_true(self) -> None:
+        cfg = load_config(block_analytics=True)
+        assert cfg.block_analytics is True
+
+    def test_block_analytics_loads_from_toml(self) -> None:
+        cfg = load_config(toml_path=FIXTURES / "linksanity.toml")
+        assert cfg.block_analytics is True
+
+
+class TestUrlIsSkipped:
+    def test_exact_url_match(self) -> None:
+        patterns = {"https://example.com/login", "https://example.com/admin"}
+        assert url_is_skipped("https://example.com/login", patterns) is True
+        assert url_is_skipped("https://example.com/admin", patterns) is True
+
+    def test_wildcard_match(self) -> None:
+        patterns = {"https://staging.example.com/*", "https://example.com/private/*"}
+        assert url_is_skipped("https://staging.example.com/page", patterns) is True
+        assert url_is_skipped("https://staging.example.com/a/b/c", patterns) is True
+        assert url_is_skipped("https://example.com/private/api", patterns) is True
+
+    def test_no_match(self) -> None:
+        patterns = {"https://example.com/admin/*"}
+        assert url_is_skipped("https://example.com/public", patterns) is False
+        assert url_is_skipped("https://other.com/admin/page", patterns) is False
+
+    def test_empty_patterns(self) -> None:
+        assert url_is_skipped("https://example.com/anything", set()) is False
+
+    def test_case_sensitive_match(self) -> None:
+        patterns = {"https://Example.com/Login"}
+        assert url_is_skipped("https://Example.com/Login", patterns) is True
+        assert url_is_skipped("https://example.com/login", patterns) is False

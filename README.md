@@ -161,12 +161,40 @@ https://internal.corp.example.com/*
 
 ### GitHub Issue reporting
 
+Use `--github-issue` when you want broken links surfaced as a trackable GitHub Issue rather than just a failed CI run. It creates or updates a single `[linksanity]` issue listing every broken URL, so the team has a persistent record to triage — not just a red check mark that disappears on the next push.
+
+**When to use it:**
+
+- **Scheduled runs** — a weekly cron job catches link rot that crept in after your last merge. The issue stays open until you fix the links and the check goes green.
+- **Repos without branch protection** — if broken links won't block a PR merge, an issue is the only signal that survives past the CI run.
+- **Large docs sites** — when dozens of links break at once (e.g. a domain migration), a single issue is easier to triage than scrolling through CI logs.
+
+**When you don't need it:**
+
+- PRs where branch protection already blocks the merge on failure — a failed job is sufficient.
+- Local runs and one-off checks.
+
+**Setup:**
+
 ```bash
 export GITHUB_TOKEN=ghp_...
 linksanity scan ./docs/ --github-issue --repo owner/repo
 ```
 
-Creates or updates a single `[linksanity]` issue summarising all broken links. The token is read from the environment and never stored.
+`GITHUB_TOKEN` is read from the environment only — never pass it as a CLI flag or store it in a file. In GitHub Actions, use the built-in token:
+
+```yaml
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The workflow job also needs `issues: write` permission:
+
+```yaml
+permissions:
+  contents: read
+  issues: write
+```
 
 ## Use with AI agents
 

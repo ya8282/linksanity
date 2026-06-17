@@ -1,4 +1,4 @@
-# linksanity (🏀17)
+# linksanity 🏀
 
 Detect broken links and redirects in Markdown, reStructuredText, and HTML documentation.
 

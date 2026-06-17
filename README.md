@@ -1,5 +1,7 @@
 # linksanity 🏀
 
+[![PyPI version](https://shields.io)](https://pypi.org)
+
 Detect broken links and redirects in Markdown, reStructuredText, and HTML content.
 
 Don't let dead URLs leave you hanging on the rim! Catch broken docs links in the Knick of time with Linksanity.

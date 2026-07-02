@@ -1,0 +1,32 @@
+= Sample AsciiDoc Document
+
+An external link: link:https://example.com[Example].
+
+A broken link: link:https://broken.example.com/does-not-exist[Broken].
+
+A cross-reference to another page: xref:chapter2.adoc[Chapter 2].
+
+A bare autolink appears directly in text: https://bare.example.com and more prose.
+
+== Listing Block
+
+The following listing block must be skipped entirely:
+
+----
+Not a link: link:https://in-listing.example.com[Nope]
+Also not a link: https://bare-in-listing.example.com
+----
+
+Back to normal text with another link:https://after-listing.example.com[After Listing].
+
+== Passthrough Block
+
+The following passthrough block must be skipped entirely:
+
++++
+Not a link: link:https://in-passthrough.example.com[Nope]
++++
+
+More normal text with xref:chapter3.adoc[Chapter 3] here.
+
+End of document.

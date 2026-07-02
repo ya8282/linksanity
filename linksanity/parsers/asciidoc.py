@@ -16,9 +16,9 @@ _XREF_MACRO_RE = re.compile(r"xref:(\S+?)\[")
 _BARE_URL_RE = re.compile(r"https?://\S+")
 
 # A delimited block opens/closes on a line that is exactly the marker
-# (four or more hyphens for listing blocks, or +++ for passthrough).
+# (four or more hyphens for listing blocks, or ++++ for passthrough).
 _LISTING_DELIM_RE = re.compile(r"^-{4,}$")
-_PASSTHROUGH_DELIM_RE = re.compile(r"^(\+\+\+|```)$")
+_PASSTHROUGH_DELIM_RE = re.compile(r"^(\+\+\+\+|```)$")
 
 
 def extract_links(path: Path) -> list[tuple[str, int]]:
@@ -26,7 +26,7 @@ def extract_links(path: Path) -> list[tuple[str, int]]:
 
     Extracts `link:URL[...]` macros, `xref:TARGET[...]` macros, and bare
     `https?://` autolinks. Content inside `----` listing blocks and
-    `+++`/``` passthrough blocks is skipped. Read errors emit a warning
+    `++++`/``` passthrough blocks is skipped. Read errors emit a warning
     and return an empty list.
     """
     try:
@@ -58,15 +58,15 @@ def extract_links(path: Path) -> list[tuple[str, int]]:
             in_passthrough = True
             continue
 
-        for match in _LINK_MACRO_RE.finditer(line):
+        link_matches = list(_LINK_MACRO_RE.finditer(line))
+        xref_matches = list(_XREF_MACRO_RE.finditer(line))
+
+        for match in link_matches:
             results.append((match.group(1), lineno))
-        for match in _XREF_MACRO_RE.finditer(line):
+        for match in xref_matches:
             results.append((match.group(1), lineno))
 
-        macro_spans = [
-            (m.start(), m.end())
-            for m in list(_LINK_MACRO_RE.finditer(line)) + list(_XREF_MACRO_RE.finditer(line))
-        ]
+        macro_spans = [(m.start(), m.end()) for m in link_matches + xref_matches]
         for match in _BARE_URL_RE.finditer(line):
             if any(start <= match.start() < end for start, end in macro_spans):
                 continue

@@ -23,9 +23,10 @@ Back to normal text with another link:https://after-listing.example.com[After Li
 
 The following passthrough block must be skipped entirely:
 
-+++
+++++
 Not a link: link:https://in-passthrough.example.com[Nope]
-+++
+Also not a link: https://bare-in-passthrough.example.com
+++++
 
 More normal text with xref:chapter3.adoc[Chapter 3] here.
 

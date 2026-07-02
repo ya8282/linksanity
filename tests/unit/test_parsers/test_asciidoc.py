@@ -32,7 +32,7 @@ class TestExtractLinks:
 
     def test_extracts_xref_after_passthrough_block(self) -> None:
         pairs = extract_links(SAMPLE)
-        assert ("chapter3.adoc", 30) in pairs
+        assert ("chapter3.adoc", 31) in pairs
 
     def test_excludes_listing_block_link_macro(self) -> None:
         urls = [url for url, _ in extract_links(SAMPLE)]
@@ -45,6 +45,10 @@ class TestExtractLinks:
     def test_excludes_passthrough_block_link_macro(self) -> None:
         urls = [url for url, _ in extract_links(SAMPLE)]
         assert "https://in-passthrough.example.com" not in urls
+
+    def test_excludes_passthrough_block_bare_autolink(self) -> None:
+        urls = [url for url, _ in extract_links(SAMPLE)]
+        assert "https://bare-in-passthrough.example.com" not in urls
 
     def test_returns_line_numbers(self) -> None:
         pairs = extract_links(SAMPLE)

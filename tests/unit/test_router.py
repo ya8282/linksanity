@@ -204,3 +204,71 @@ class TestDispatchPlaywright:
                 LinkType.EXTERNAL, config, *sems,
             )
         assert result.status == LinkStatus.OK
+
+
+# ── dispatch() — cell forwarding ─────────────────────────────────────────────
+
+class TestDispatchCellForwarding:
+    @pytest.fixture
+    def sems(self) -> tuple:
+        import asyncio
+        return asyncio.Semaphore(5), asyncio.Semaphore(2)
+
+    @pytest.mark.asyncio
+    async def test_cell_forwarded_to_filesystem(
+        self, tmp_path: Path, sems: tuple
+    ) -> None:
+        f = tmp_path / "page.md"
+        f.write_text("# Hello\n")
+        result = await dispatch(
+            "#hello", str(f), 1, LinkType.ANCHOR, Config(), *sems, cell=4
+        )
+        assert result.cell == 4
+
+    @pytest.mark.asyncio
+    async def test_cell_forwarded_to_http(self, sems: tuple) -> None:
+        ok_result = LinkResult(
+            source_file="f", line=1, url="https://example.com",
+            link_type=LinkType.EXTERNAL, status=LinkStatus.OK,
+        )
+        mock_check = AsyncMock(return_value=ok_result)
+        with patch("linksanity.router.http.check", mock_check):
+            await dispatch(
+                "https://example.com", "f", 1, LinkType.EXTERNAL,
+                Config(timeout=5, retry=0), *sems, cell=2,
+            )
+        assert mock_check.call_args.kwargs["cell"] == 2
+
+    @pytest.mark.asyncio
+    async def test_cell_forwarded_to_playwright(self, sems: tuple) -> None:
+        config = Config(js_domains={"spa.example.com"}, timeout=5)
+        ok_result = LinkResult(
+            source_file="f", line=1, url="https://spa.example.com/page",
+            link_type=LinkType.EXTERNAL, status=LinkStatus.OK,
+        )
+        mock_check = AsyncMock(return_value=ok_result)
+        with patch("linksanity.checkers.playwright.check", mock_check):
+            await dispatch(
+                "https://spa.example.com/page", "f", 1,
+                LinkType.EXTERNAL, config, *sems, cell=9,
+            )
+        assert mock_check.call_args.kwargs["cell"] == 9
+
+    @pytest.mark.asyncio
+    async def test_cell_set_on_skipped_result(self, sems: tuple) -> None:
+        config = Config(skip_urls={"https://example.com/private/*"}, retry=0, timeout=5)
+        result = await dispatch(
+            "https://example.com/private/page", "f", 1,
+            LinkType.EXTERNAL, config, *sems, cell=6,
+        )
+        assert result.status == LinkStatus.SKIPPED
+        assert result.cell == 6
+
+    @pytest.mark.asyncio
+    async def test_cell_defaults_to_none(self, tmp_path: Path, sems: tuple) -> None:
+        f = tmp_path / "page.md"
+        f.write_text("# Hello\n")
+        result = await dispatch(
+            "#hello", str(f), 1, LinkType.ANCHOR, Config(), *sems
+        )
+        assert result.cell is None

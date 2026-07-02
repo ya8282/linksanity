@@ -210,3 +210,38 @@ class TestCheckResultFields:
         assert result.source_file == str(src)
         assert result.line == 42
         assert result.url == "./missing.md"
+
+
+class TestCheckCell:
+    def test_cell_defaults_to_none(self, tmp_path: Path) -> None:
+        src = tmp_path / "a.md"
+        target = tmp_path / "other.md"
+        src.write_text("# A")
+        target.write_text("# Other")
+        result = check("./other.md", str(src), 1, LinkType.INTERNAL)
+        assert result.cell is None
+
+    def test_cell_set_on_ok_result(self, tmp_path: Path) -> None:
+        src = tmp_path / "a.md"
+        target = tmp_path / "other.md"
+        src.write_text("# A")
+        target.write_text("# Other")
+        result = check("./other.md", str(src), 1, LinkType.INTERNAL, cell=3)
+        assert result.cell == 3
+
+    def test_cell_set_on_broken_file_result(self, tmp_path: Path) -> None:
+        src = tmp_path / "a.md"
+        src.write_text("# A")
+        result = check("./missing.md", str(src), 1, LinkType.INTERNAL, cell=5)
+        assert result.status == LinkStatus.BROKEN
+        assert result.cell == 5
+
+    def test_cell_set_on_broken_anchor_result(self, tmp_path: Path) -> None:
+        src = tmp_path / "doc.md"
+        src.write_text("# Introduction\n")
+        result = check(
+            "#nonexistent", str(src), 1, LinkType.ANCHOR,
+            check_anchors=True, cell=2,
+        )
+        assert result.status == LinkStatus.BROKEN
+        assert result.cell == 2

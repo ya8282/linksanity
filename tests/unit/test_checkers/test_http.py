@@ -151,6 +151,45 @@ class TestNetworkErrors:
 
 # ── Domain matching helper ────────────────────────────────────────────────────
 
+class TestCellForwarding:
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_cell_set_on_ok_result(self) -> None:
+        respx.head(URL).mock(return_value=httpx.Response(200))
+        result = await check(URL, **make_kwargs(cell=3))  # type: ignore[arg-type]
+        assert result.cell == 3
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_cell_set_on_broken_result(self) -> None:
+        respx.head(URL).mock(return_value=httpx.Response(404))
+        result = await check(URL, **make_kwargs(cell=8))  # type: ignore[arg-type]
+        assert result.cell == 8
+
+    @pytest.mark.asyncio
+    async def test_cell_set_on_skipped_result(self) -> None:
+        result = await check(
+            URL, **make_kwargs(ignore_domains={"example.com"}, cell=1)  # type: ignore[arg-type]
+        )
+        assert result.status == LinkStatus.SKIPPED
+        assert result.cell == 1
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_cell_set_on_network_error_result(self) -> None:
+        respx.head(URL).mock(side_effect=httpx.ConnectError("refused"))
+        result = await check(URL, **make_kwargs(cell=4))  # type: ignore[arg-type]
+        assert result.status == LinkStatus.ERROR
+        assert result.cell == 4
+
+    @pytest.mark.asyncio
+    async def test_cell_defaults_to_none(self) -> None:
+        result = await check(
+            URL, **make_kwargs(ignore_domains={"example.com"})  # type: ignore[arg-type]
+        )
+        assert result.cell is None
+
+
 class TestDomainMatch:
     @pytest.mark.parametrize("domain,ignore_set,expected", [
         ("example.com", {"example.com"}, True),

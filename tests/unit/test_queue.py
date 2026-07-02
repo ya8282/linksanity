@@ -88,3 +88,41 @@ class TestLinkQueue:
     def test_sources_unknown_url_returns_empty(self) -> None:
         q = LinkQueue()
         assert q.sources("https://never-added.com") == []
+
+
+class TestLinkResultCell:
+    def test_cell_defaults_to_none(self) -> None:
+        r = make_result()
+        assert r.cell is None
+
+    def test_cell_can_be_set(self) -> None:
+        r = make_result(cell=3)
+        assert r.cell == 3
+
+
+class TestLinkQueueCell:
+    def test_pending_returns_five_tuples(self) -> None:
+        q = LinkQueue()
+        q.add("https://a.com", "a.md", 1, LinkType.EXTERNAL)
+        pending = q.pending()
+        assert len(pending) == 1
+        assert len(pending[0]) == 5
+
+    def test_pending_cell_defaults_to_none(self) -> None:
+        q = LinkQueue()
+        q.add("https://a.com", "a.md", 1, LinkType.EXTERNAL)
+        url, source_file, line, link_type, cell = q.pending()[0]
+        assert cell is None
+
+    def test_add_stores_cell_and_pending_returns_it(self) -> None:
+        q = LinkQueue()
+        q.add("https://a.com", "a.md", 1, LinkType.EXTERNAL, cell=7)
+        url, source_file, line, link_type, cell = q.pending()[0]
+        assert cell == 7
+
+    def test_duplicate_url_keeps_first_cell(self) -> None:
+        q = LinkQueue()
+        q.add("https://a.com", "a.md", 1, LinkType.EXTERNAL, cell=1)
+        q.add("https://a.com", "b.md", 5, LinkType.EXTERNAL, cell=99)
+        url, source_file, line, link_type, cell = q.pending()[0]
+        assert cell == 1

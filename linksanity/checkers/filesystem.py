@@ -15,6 +15,7 @@ def check(
     link_type: LinkType,
     *,
     check_anchors: bool = False,
+    cell: int | None = None,
 ) -> LinkResult:
     """Resolve and validate an internal or anchor link.
 
@@ -45,6 +46,7 @@ def check(
             link_type=link_type,
             status=LinkStatus.BROKEN,
             error=f"file not found: {target_path}",
+            cell=cell,
         )
 
     # Optionally validate anchor fragment
@@ -56,6 +58,7 @@ def check(
             link_type=link_type,
             status=LinkStatus.BROKEN,
             error=f"anchor '#{fragment}' not found in {target_path.name}",
+            cell=cell,
         )
 
     return LinkResult(
@@ -64,6 +67,7 @@ def check(
         url=url,
         link_type=link_type,
         status=LinkStatus.OK,
+        cell=cell,
     )
 
 

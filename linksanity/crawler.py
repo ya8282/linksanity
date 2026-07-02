@@ -84,7 +84,7 @@ async def run_crawl(start_url: str, config: Config) -> LinkQueue:
     # HTTP-check all external links (not crawled pages, not already skipped)
     external = [
         (url, src, line, lt)
-        for url, src, line, lt in queue.pending()
+        for url, src, line, lt, _cell in queue.pending()
         if url not in visited
         and not (config.skip_urls and url_is_skipped(url, config.skip_urls))
     ]

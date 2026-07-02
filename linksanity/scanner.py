@@ -26,8 +26,8 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
 
     results = await asyncio.gather(
         *[
-            dispatch(url, src, line, lt, config, http_sem, pw_sem)
-            for url, src, line, lt in queue.pending()
+            dispatch(url, src, line, lt, config, http_sem, pw_sem, cell=cell)
+            for url, src, line, lt, cell in queue.pending()
         ]
     )
     for result in results:

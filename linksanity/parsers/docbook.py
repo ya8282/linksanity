@@ -111,9 +111,12 @@ def _parse(path: Path) -> tuple[list[tuple[str, int]], set[str]] | None:
             if linkend:
                 links.append((f"docbook-xref:{linkend}", line))
 
-        elem_id = fixed_attrs.get("id") or fixed_attrs.get(_XML_ID_ATTR)
-        if elem_id:
-            ids.add(elem_id)
+        plain_id = fixed_attrs.get("id")
+        if plain_id:
+            ids.add(plain_id)
+        xml_id = fixed_attrs.get(_XML_ID_ATTR)
+        if xml_id:
+            ids.add(xml_id)
 
     parser.StartElementHandler = start_element
 
@@ -123,8 +126,7 @@ def _parse(path: Path) -> tuple[list[tuple[str, int]], set[str]] | None:
         warnings.warn(f"[linksanity] DocBook XML parse error in {path}: {e}", stacklevel=3)
         return None
 
-    is_docbook = state["is_docbook"] or b"docbook" in content[:2048].lower()
-    if not is_docbook:
+    if not state["is_docbook"]:
         warnings.warn(f"[linksanity] skipping {path}: not a DocBook XML document", stacklevel=3)
         return None
 

@@ -82,6 +82,16 @@ class TestExtractLinks:
         assert result == []
         assert len(w) == 1
 
+    def test_empty_ulink_url_is_skipped(self, tmp_path: Path) -> None:
+        f = tmp_path / "empty-url.xml"
+        f.write_text('<book><para><ulink url="">empty</ulink></para></book>')
+        assert extract_links(f) == []
+
+    def test_empty_xref_linkend_is_skipped(self, tmp_path: Path) -> None:
+        f = tmp_path / "empty-linkend.xml"
+        f.write_text('<book><para><xref linkend=""/></para></book>')
+        assert extract_links(f) == []
+
 
 class TestExtractIds:
     def test_collects_xml_id(self) -> None:
@@ -94,6 +104,13 @@ class TestExtractIds:
 
     def test_returns_set(self) -> None:
         assert isinstance(extract_ids(SAMPLE), set)
+
+    def test_collects_both_id_and_xml_id_on_same_element(self, tmp_path: Path) -> None:
+        f = tmp_path / "dual-id.xml"
+        f.write_text('<book id="plain-id" xml:id="xml-id-value"><title>T</title></book>')
+        ids = extract_ids(f)
+        assert "plain-id" in ids
+        assert "xml-id-value" in ids
 
     def test_missing_file_warns_and_returns_empty(self) -> None:
         with warnings.catch_warnings(record=True) as w:

@@ -80,6 +80,28 @@ class TestExtractLinks:
         f.write_text("")
         assert extract_links(f) == []
 
+    def test_parse_error_warns_with_path_and_returns_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import linksanity.parsers.markdown as markdown_module
+
+        def boom(_content: str) -> list[tuple[str, int]]:
+            raise ValueError("kaboom")
+
+        monkeypatch.setattr(markdown_module, "parse_markdown_string", boom)
+        f = tmp_path / "bad.md"
+        f.write_text("some content")
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = extract_links(f)
+
+        assert result == []
+        assert len(w) == 1
+        message = str(w[0].message)
+        assert "markdown parse error" in message
+        assert str(f) in message
+
     @pytest.mark.parametrize("content,expected_url", [
         ("[a](https://a.com)", "https://a.com"),
         ("[b](https://b.com 'title')", "https://b.com"),
@@ -125,8 +147,18 @@ class TestParseMarkdownString:
     def test_empty_string_returns_empty(self) -> None:
         assert parse_markdown_string("") == []
 
-    def test_invalid_markdown_returns_empty(self) -> None:
-        # Even invalid markdown should be handled gracefully
+    def test_no_links_returns_empty(self) -> None:
         content = "this is just text with no links"
         pairs = parse_markdown_string(content)
         assert pairs == []
+
+    def test_parse_error_propagates(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import linksanity.parsers.markdown as markdown_module
+
+        def boom(*_args: object, **_kwargs: object) -> list[object]:
+            raise ValueError("kaboom")
+
+        monkeypatch.setattr(markdown_module.MarkdownIt, "parse", boom)
+
+        with pytest.raises(ValueError, match="kaboom"):
+            parse_markdown_string("[a](https://a.com)")

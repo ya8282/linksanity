@@ -8,7 +8,7 @@ from pathlib import Path
 import typer
 
 from linksanity.config import Config, load_config
-from linksanity.queue import LinkResult
+from linksanity.queue import LinkResult, LinkStatus
 from linksanity.reporters import report
 from linksanity.scanner import run_scan
 
@@ -82,6 +82,9 @@ def scan(
     since: str | None = typer.Option(
         None, help="Git ref to diff against for --incremental (default: last recorded run)"
     ),
+    baseline: str | None = typer.Option(
+        None, help="Previous JSON report to diff against; only new breakage is reported"
+    ),
 ) -> None:
     """Scan local documentation files for broken links."""
     overrides: dict[str, object] = {}
@@ -105,6 +108,8 @@ def scan(
         overrides["incremental"] = True
     if since:
         overrides["since"] = since
+    if baseline:
+        overrides["baseline"] = baseline
     if link_style:
         if link_style not in ("mkdocs", "docusaurus", "sphinx"):
             typer.echo(
@@ -149,6 +154,10 @@ def scan(
     queue = asyncio.run(run_scan(paths, config))
     results = queue.results()
 
+    if config.baseline:
+        from linksanity.baseline import load_baseline, only_new  # noqa: I001
+        results = only_new(results, load_baseline(Path(config.baseline)))
+
     if config.output:
         try:
             with open(config.output, "w", encoding="utf-8") as fh:
@@ -171,8 +180,7 @@ def scan(
     if config.github_issue:
         _run_github_reporter(results, config)
 
-    summary = queue.summary()
-    broken = summary.get("broken", 0) + summary.get("error", 0)
+    broken = sum(1 for r in results if r.status in (LinkStatus.BROKEN, LinkStatus.ERROR))
     raise typer.Exit(1 if broken else 0)
 
 

@@ -219,6 +219,42 @@ class TestScanHTTPEdgeCases:
         assert result.exit_code == 0, result.output
 
 
+# ── Baseline diffing ──────────────────────────────────────────────────────────
+
+class TestScanBaseline:
+    def test_known_broken_link_exits_0_against_baseline(self, tmp_path: Path) -> None:
+        f = tmp_path / "a.md"
+        f.write_text("[broken](missing.md)\n")
+
+        baseline = tmp_path / "baseline.json"
+        runner.invoke(app, ["scan", str(f), "--format", "json", "--output", str(baseline)])
+        assert json.loads(baseline.read_text())[0]["status"] == "broken"
+
+        result = runner.invoke(app, ["scan", str(f), "--baseline", str(baseline)])
+        assert result.exit_code == 0, result.output
+
+    def test_new_broken_link_still_exits_1(self, tmp_path: Path) -> None:
+        f = tmp_path / "a.md"
+        f.write_text("[broken](missing.md)\n")
+
+        baseline = tmp_path / "baseline.json"
+        runner.invoke(app, ["scan", str(f), "--format", "json", "--output", str(baseline)])
+
+        f.write_text("[broken](missing.md)\n[new-broken](also-missing.md)\n")
+        result = runner.invoke(app, ["scan", str(f), "--baseline", str(baseline)])
+        assert result.exit_code == 1
+        assert "also-missing.md" in result.output
+        assert "gone.md" not in result.output
+
+    def test_missing_baseline_file_reports_everything(self, tmp_path: Path) -> None:
+        f = tmp_path / "a.md"
+        f.write_text("[broken](missing.md)\n")
+        result = runner.invoke(
+            app, ["scan", str(f), "--baseline", str(tmp_path / "no-such-file.json")]
+        )
+        assert result.exit_code == 1
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _write_domains(tmp_path: Path, domains: list[str]) -> Path:

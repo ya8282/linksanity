@@ -32,6 +32,7 @@ class Config:
     cache_ttl: int = 86400
     incremental: bool = False
     since: str | None = None
+    baseline: str | None = None
 
 
 def url_is_skipped(url: str, patterns: set[str]) -> bool:
@@ -108,6 +109,7 @@ def load_config(
         cache_ttl=_int(data, "cache_ttl", Config.cache_ttl),
         incremental=_bool(data, "incremental", Config.incremental),
         since=_str(data, "since", "") or None,
+        baseline=_str(data, "baseline", "") or None,
     )
 
     # CLI overrides replace file values when explicitly provided

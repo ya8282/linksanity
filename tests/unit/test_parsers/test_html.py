@@ -28,13 +28,15 @@ class TestExtractLinks:
         urls = [url for url, _ in extract_links(SAMPLE)]
         assert "#section" in urls
 
-    def test_excludes_mailto(self) -> None:
+    def test_includes_mailto_for_reporting(self) -> None:
+        # mailto: links are extracted; router.classify() reports them as
+        # skipped rather than silently dropping them (COV-04).
         urls = [url for url, _ in extract_links(SAMPLE)]
-        assert not any(u.startswith("mailto:") for u in urls)
+        assert any(u.startswith("mailto:") for u in urls)
 
-    def test_excludes_javascript(self) -> None:
+    def test_includes_javascript_for_reporting(self) -> None:
         urls = [url for url, _ in extract_links(SAMPLE)]
-        assert not any(u.startswith("javascript:") for u in urls)
+        assert any(u.startswith("javascript:") for u in urls)
 
     def test_excludes_empty_href(self) -> None:
         urls = [url for url, _ in extract_links(SAMPLE)]
@@ -71,8 +73,8 @@ class TestExtractLinks:
         ("https://good.com", True),
         ("#anchor", True),
         ("./relative.html", True),
-        ("mailto:x@y.com", False),
-        ("javascript:void(0)", False),
+        ("mailto:x@y.com", True),
+        ("javascript:void(0)", True),
         ("", False),
     ])
     def test_href_filtering(
@@ -82,3 +84,23 @@ class TestExtractLinks:
         f.write_text(f'<html><body><a href="{href}">link</a></body></html>')
         urls = [url for url, _ in extract_links(f)]
         assert (href in urls) == expected_in_results
+
+
+class TestExtractImages:
+    def test_img_src_excluded_by_default(self, tmp_path: Path) -> None:
+        f = tmp_path / "test.html"
+        f.write_text('<html><body><img src="./photo.png"></body></html>')
+        urls = [url for url, _ in extract_links(f)]
+        assert "./photo.png" not in urls
+
+    def test_img_src_included_when_requested(self, tmp_path: Path) -> None:
+        f = tmp_path / "test.html"
+        f.write_text('<html><body><img src="./photo.png"></body></html>')
+        urls = [url for url, _ in extract_links(f, include_images=True)]
+        assert "./photo.png" in urls
+
+    def test_img_without_src_ignored(self, tmp_path: Path) -> None:
+        f = tmp_path / "test.html"
+        f.write_text('<html><body><img alt="no src"></body></html>')
+        urls = [url for url, _ in extract_links(f, include_images=True)]
+        assert urls == []

@@ -15,6 +15,8 @@ class Config:
     timeout: int = 10
     retry: int = 2
     check_anchors: bool = False
+    check_images: bool = False
+    link_style: str | None = None
     max_pages: int = 500
     ignore_domains: set[str] = field(default_factory=set)
     js_domains: set[str] = field(default_factory=set)
@@ -25,6 +27,11 @@ class Config:
     github_issue: bool = False
     github_repo: str | None = None
     format: str = "console"
+    max_redirects: int = 10
+    cache_file: str | None = None
+    cache_ttl: int = 86400
+    incremental: bool = False
+    since: str | None = None
 
 
 def url_is_skipped(url: str, patterns: set[str]) -> bool:
@@ -88,12 +95,19 @@ def load_config(
         timeout=_int(data, "timeout", Config.timeout),
         retry=_int(data, "retry", Config.retry),
         check_anchors=_bool(data, "check_anchors", Config.check_anchors),
+        check_images=_bool(data, "check_images", Config.check_images),
+        link_style=_str(data, "link_style", "") or None,
         max_pages=_int(data, "max_pages", Config.max_pages),
         ignore_domains=_domain_set("ignore_domains"),
         js_domains=_domain_set("js_domains"),
         skip_urls=_url_set("skip_urls"),
         block_analytics=_bool(data, "block_analytics", Config.block_analytics),
         format=_str(data, "format", Config.format),
+        max_redirects=_int(data, "max_redirects", Config.max_redirects),
+        cache_file=_str(data, "cache_file", "") or None,
+        cache_ttl=_int(data, "cache_ttl", Config.cache_ttl),
+        incremental=_bool(data, "incremental", Config.incremental),
+        since=_str(data, "since", "") or None,
     )
 
     # CLI overrides replace file values when explicitly provided

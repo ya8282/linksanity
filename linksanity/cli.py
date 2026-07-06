@@ -41,6 +41,12 @@ def scan(
     timeout: int | None = typer.Option(None, help="Per-request timeout in seconds"),
     retry: int | None = typer.Option(None, help="Number of retries on 429/503"),
     check_anchors: bool = typer.Option(False, help="Validate anchor fragments"),
+    check_images: bool = typer.Option(
+        False, help="Also validate <img src> / ![]() image targets, not just links"
+    ),
+    link_style: str | None = typer.Option(
+        None, help="Relative-link resolution preset for built docs sites: mkdocs, docusaurus, sphinx"
+    ),
     ignore_domains: str | None = typer.Option(
         None, help="File listing domains to skip (one per line)"
     ),
@@ -61,6 +67,21 @@ def scan(
     repo: str | None = typer.Option(
         None, help="GitHub repo in OWNER/REPO format (required with --github-issue)"
     ),
+    max_redirects: int | None = typer.Option(
+        None, help="Max redirect hops before flagging as too-many-redirects"
+    ),
+    cache: str | None = typer.Option(
+        None, help="Path to a local cache file; re-runs skip unchanged links within --cache-ttl"
+    ),
+    cache_ttl: int | None = typer.Option(
+        None, help="Seconds a cached link result stays valid (default 86400)"
+    ),
+    incremental: bool = typer.Option(
+        False, help="Only scan files changed since the last run (git diff-aware)"
+    ),
+    since: str | None = typer.Option(
+        None, help="Git ref to diff against for --incremental (default: last recorded run)"
+    ),
 ) -> None:
     """Scan local documentation files for broken links."""
     overrides: dict[str, object] = {}
@@ -72,6 +93,26 @@ def scan(
         overrides["retry"] = retry
     if check_anchors:
         overrides["check_anchors"] = True
+    if check_images:
+        overrides["check_images"] = True
+    if max_redirects is not None:
+        overrides["max_redirects"] = max_redirects
+    if cache:
+        overrides["cache_file"] = cache
+    if cache_ttl is not None:
+        overrides["cache_ttl"] = cache_ttl
+    if incremental:
+        overrides["incremental"] = True
+    if since:
+        overrides["since"] = since
+    if link_style:
+        if link_style not in ("mkdocs", "docusaurus", "sphinx"):
+            typer.echo(
+                f"[linksanity] --link-style must be one of: mkdocs, docusaurus, sphinx (got {link_style!r})",
+                err=True,
+            )
+            raise typer.Exit(2)
+        overrides["link_style"] = link_style
     if output:
         overrides["output"] = output
     if report_path:
@@ -151,6 +192,9 @@ def crawl(
     timeout: int | None = typer.Option(None, help="Per-request timeout in seconds"),
     retry: int | None = typer.Option(None, help="Number of retries on 429/503"),
     max_pages: int | None = typer.Option(None, help="Max pages to crawl (default 500)"),
+    check_anchors: bool = typer.Option(
+        False, help="Validate same-page anchor fragments against crawled pages"
+    ),
     ignore_domains: str | None = typer.Option(
         None, help="File listing domains to skip (one per line)"
     ),
@@ -168,6 +212,9 @@ def crawl(
     github_issue: bool = typer.Option(False, help="Open a GitHub Issue for broken links"),
     repo: str | None = typer.Option(
         None, help="GitHub repo in OWNER/REPO format (required with --github-issue)"
+    ),
+    max_redirects: int | None = typer.Option(
+        None, help="Max redirect hops before flagging as too-many-redirects"
     ),
 ) -> None:
     """Crawl a live site and check all links."""
@@ -192,6 +239,8 @@ def crawl(
         overrides["retry"] = retry
     if max_pages is not None:
         overrides["max_pages"] = max_pages
+    if check_anchors:
+        overrides["check_anchors"] = True
     if output:
         overrides["output"] = output
     if report_path:
@@ -200,6 +249,8 @@ def crawl(
         overrides["github_issue"] = True
     if repo:
         overrides["github_repo"] = repo
+    if max_redirects is not None:
+        overrides["max_redirects"] = max_redirects
     overrides["format"] = format
 
     ignore_set = _read_domains(ignore_domains)

@@ -52,6 +52,18 @@ class TestStatusClassification:
 
     @pytest.mark.asyncio
     @respx.mock
+    async def test_redirect_chain_includes_all_hops(self) -> None:
+        mid_url = "https://example.com/mid"
+        final_url = "https://example.com/canonical"
+        respx.head(URL).mock(return_value=httpx.Response(301, headers={"location": mid_url}))
+        respx.head(mid_url).mock(return_value=httpx.Response(302, headers={"location": final_url}))
+        respx.head(final_url).mock(return_value=httpx.Response(200))
+        result = await check(URL, **make_kwargs())  # type: ignore[arg-type]
+        assert result.status == LinkStatus.REDIRECT
+        assert result.redirect_chain == [URL, mid_url, final_url]
+
+    @pytest.mark.asyncio
+    @respx.mock
     async def test_404_is_broken(self) -> None:
         respx.head(URL).mock(return_value=httpx.Response(404))
         result = await check(URL, **make_kwargs())  # type: ignore[arg-type]
@@ -107,6 +119,22 @@ class TestRetry:
         result = await check(URL, **make_kwargs(retries=1))  # type: ignore[arg-type]
         assert result.status == LinkStatus.BROKEN
         assert result.http_code == 503
+
+
+# ── Too many redirects ────────────────────────────────────────────────────────
+
+class TestTooManyRedirects:
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_redirect_loop_flagged_distinct_from_broken(self) -> None:
+        a, b = "https://example.com/a", "https://example.com/b"
+        respx.head(URL).mock(return_value=httpx.Response(301, headers={"location": a}))
+        respx.head(a).mock(return_value=httpx.Response(301, headers={"location": b}))
+        respx.head(b).mock(return_value=httpx.Response(301, headers={"location": a}))
+        result = await check(URL, **make_kwargs(max_redirects=2))  # type: ignore[arg-type]
+        assert result.status == LinkStatus.TOO_MANY_REDIRECTS
+        assert result.status != LinkStatus.BROKEN
+        assert result.error is not None and "2" in result.error
 
 
 # ── Ignore domains ────────────────────────────────────────────────────────────

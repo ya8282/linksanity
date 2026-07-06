@@ -33,6 +33,11 @@ class TestClassify:
         # Internal with fragment — still INTERNAL (filesystem checker handles fragment)
         ("./page.md#heading", LinkType.INTERNAL),
         ("../other.rst#target", LinkType.INTERNAL),
+        # Non-checkable schemes — reported as skipped, not silently dropped (COV-04)
+        ("mailto:test@example.com", LinkType.NON_HTTP_SCHEME),
+        ("tel:+15551234567", LinkType.NON_HTTP_SCHEME),
+        ("javascript:void(0)", LinkType.NON_HTTP_SCHEME),
+        ("data:text/plain;base64,SGVsbG8=", LinkType.NON_HTTP_SCHEME),
     ])
     def test_classify(self, url: str, expected: LinkType) -> None:
         assert classify(url) == expected
@@ -160,6 +165,41 @@ class TestDispatchHTTP:
             "https://example.com/login", "f", 1, LinkType.EXTERNAL, config, *sems
         )
         assert result.status == LinkStatus.SKIPPED
+
+
+# ── dispatch() — non-HTTP schemes ─────────────────────────────────────────────
+
+class TestDispatchNonHttpScheme:
+    @pytest.fixture
+    def config(self) -> Config:
+        return Config()
+
+    @pytest.fixture
+    def sems(self) -> tuple:
+        import asyncio
+        return asyncio.Semaphore(5), asyncio.Semaphore(2)
+
+    @pytest.mark.asyncio
+    async def test_mailto_is_skipped_with_reason(
+        self, config: Config, sems: tuple
+    ) -> None:
+        result = await dispatch(
+            "mailto:test@example.com", "f", 1, LinkType.NON_HTTP_SCHEME, config, *sems
+        )
+        assert result.status == LinkStatus.SKIPPED
+        assert result.error is not None
+        assert "mailto" in result.error
+
+    @pytest.mark.asyncio
+    async def test_tel_is_skipped_with_reason(
+        self, config: Config, sems: tuple
+    ) -> None:
+        result = await dispatch(
+            "tel:+15551234567", "f", 1, LinkType.NON_HTTP_SCHEME, config, *sems
+        )
+        assert result.status == LinkStatus.SKIPPED
+        assert result.error is not None
+        assert "tel" in result.error
 
 
 # ── dispatch() — Playwright route ─────────────────────────────────────────────

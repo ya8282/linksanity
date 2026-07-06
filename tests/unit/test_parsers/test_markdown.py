@@ -48,16 +48,22 @@ class TestExtractLinks:
         urls = [url for url, _ in extract_links(SAMPLE)]
         assert "https://in-code-span.example.com" not in urls
 
-    def test_excludes_mailto(self) -> None:
+    def test_includes_mailto_for_reporting(self, tmp_path: Path) -> None:
+        # mailto: links are extracted; router.classify() reports them as
+        # skipped rather than silently dropping them (COV-04).
         content = "Send [email](mailto:test@example.com) here."
-        tmp = Path("/tmp/test_mailto.md")
+        tmp = tmp_path / "test_mailto.md"
         tmp.write_text(content)
         urls = [url for url, _ in extract_links(tmp)]
-        assert not any(u.startswith("mailto:") for u in urls)
+        assert any(u.startswith("mailto:") for u in urls)
 
-    def test_excludes_javascript(self) -> None:
+    def test_javascript_scheme_rejected_by_markdown_it(self, tmp_path: Path) -> None:
+        # markdown-it-py's validateLink refuses javascript: as an XSS-safety
+        # default — it never becomes a link token, so there's nothing to
+        # report. This is intentionally left as-is (COV-04 only concerns
+        # schemes the parser does surface, e.g. mailto:/tel:).
         content = "Click [here](javascript:void(0))."
-        tmp = Path("/tmp/test_js.md")
+        tmp = tmp_path / "test_js.md"
         tmp.write_text(content)
         urls = [url for url, _ in extract_links(tmp)]
         assert not any(u.startswith("javascript:") for u in urls)
@@ -90,3 +96,17 @@ class TestExtractLinks:
         f.write_text(content)
         urls = [url for url, _ in extract_links(f)]
         assert expected_url in urls
+
+
+class TestExtractImages:
+    def test_image_excluded_by_default(self, tmp_path: Path) -> None:
+        f = tmp_path / "test.md"
+        f.write_text("![alt text](./photo.png)")
+        urls = [url for url, _ in extract_links(f)]
+        assert "./photo.png" not in urls
+
+    def test_image_included_when_requested(self, tmp_path: Path) -> None:
+        f = tmp_path / "test.md"
+        f.write_text("![alt text](./photo.png)")
+        urls = [url for url, _ in extract_links(f, include_images=True)]
+        assert "./photo.png" in urls

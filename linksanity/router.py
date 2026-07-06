@@ -9,11 +9,16 @@ from linksanity.checkers import filesystem, http
 from linksanity.config import Config, url_is_skipped
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 
+# Schemes that can't be meaningfully checked (no HTTP resource to fetch).
+# Reported as SKIPPED rather than silently dropped, so their absence isn't confusing.
+_NON_CHECKABLE_SCHEMES = {"mailto", "tel", "javascript", "data", "blob", "ftp", "sms"}
+
 
 def classify(url: str) -> LinkType:
     """Return the LinkType for a URL based on its structure.
 
     - '#fragment'         → ANCHOR
+    - 'mailto:'/'tel:'/…  → NON_HTTP_SCHEME (reported as skipped, not checked)
     - 'http(s)://…#frag' → EXTERNAL_ANCHOR
     - 'http(s)://…'      → EXTERNAL
     - anything else       → INTERNAL (relative path, may include a fragment)
@@ -22,6 +27,9 @@ def classify(url: str) -> LinkType:
         return LinkType.ANCHOR
 
     parsed = urlparse(url)
+    if parsed.scheme in _NON_CHECKABLE_SCHEMES:
+        return LinkType.NON_HTTP_SCHEME
+
     if parsed.scheme in ("http", "https"):
         return LinkType.EXTERNAL_ANCHOR if parsed.fragment else LinkType.EXTERNAL
 
@@ -38,10 +46,19 @@ async def dispatch(
     pw_sem: asyncio.Semaphore,
 ) -> LinkResult:
     """Route a link to the correct checker and return its result."""
+    if link_type == LinkType.NON_HTTP_SCHEME:
+        scheme = urlparse(url).scheme
+        return LinkResult(
+            source_file=source_file, line=line, url=url,
+            link_type=link_type, status=LinkStatus.SKIPPED,
+            error=f"{scheme}: scheme not checked",
+        )
+
     if link_type in (LinkType.ANCHOR, LinkType.INTERNAL):
         return filesystem.check(
             url, source_file, line, link_type,
             check_anchors=config.check_anchors,
+            link_style=config.link_style,
         )
 
     if config.skip_urls and url_is_skipped(url, config.skip_urls):
@@ -65,6 +82,7 @@ async def dispatch(
             ignore_domains=config.ignore_domains,
             timeout=config.timeout,
             retries=config.retry,
+            max_redirects=config.max_redirects,
         )
 
 

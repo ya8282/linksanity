@@ -8,6 +8,7 @@ class LinkStatus(Enum):
     OK = "ok"
     BROKEN = "broken"
     REDIRECT = "redirect"
+    TOO_MANY_REDIRECTS = "too_many_redirects"
     SKIPPED = "skipped"
     ERROR = "error"
 
@@ -17,6 +18,7 @@ class LinkType(Enum):
     INTERNAL = "internal"
     ANCHOR = "anchor"
     EXTERNAL_ANCHOR = "external_anchor"
+    NON_HTTP_SCHEME = "non_http_scheme"
 
 
 @dataclass
@@ -29,6 +31,7 @@ class LinkResult:
     http_code: int | None = None
     resolved_url: str | None = None
     error: str | None = None
+    redirect_chain: list[str] | None = None
 
 
 @dataclass

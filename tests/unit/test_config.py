@@ -16,6 +16,8 @@ class TestConfigDefaults:
         assert cfg.timeout == 10
         assert cfg.retry == 2
         assert cfg.check_anchors is False
+        assert cfg.check_images is False
+        assert cfg.link_style is None
         assert cfg.max_pages == 500
         assert cfg.ignore_domains == set()
         assert cfg.js_domains == set()
@@ -54,6 +56,14 @@ class TestCliOverrides:
     def test_override_on_defaults(self, tmp_path: Path) -> None:
         cfg = load_config(toml_path=tmp_path / "none.toml", check_anchors=True)
         assert cfg.check_anchors is True
+
+    def test_check_images_override(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "none.toml", check_images=True)
+        assert cfg.check_images is True
+
+    def test_link_style_override(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "none.toml", link_style="mkdocs")
+        assert cfg.link_style == "mkdocs"
 
     @pytest.mark.parametrize("fmt", ["json", "csv", "console"])
     def test_format_override(self, fmt: str) -> None:

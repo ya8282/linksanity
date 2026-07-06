@@ -10,7 +10,12 @@ from typing import IO
 
 from linksanity.queue import LinkResult, LinkStatus
 
-_NOTABLE = {LinkStatus.BROKEN, LinkStatus.ERROR, LinkStatus.REDIRECT}
+_NOTABLE = {
+    LinkStatus.BROKEN,
+    LinkStatus.ERROR,
+    LinkStatus.REDIRECT,
+    LinkStatus.TOO_MANY_REDIRECTS,
+}
 
 
 def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
@@ -26,6 +31,7 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
     ok = counts[LinkStatus.OK]
     broken = counts[LinkStatus.BROKEN] + counts[LinkStatus.ERROR]
     redirect = counts[LinkStatus.REDIRECT]
+    too_many = counts[LinkStatus.TOO_MANY_REDIRECTS]
     skipped = counts[LinkStatus.SKIPPED]
     total = len(results)
 
@@ -34,6 +40,7 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
     _w(out, f"| ✅ ok | {ok} |\n")
     _w(out, f"| ❌ broken | {broken} |\n")
     _w(out, f"| ↗ redirect | {redirect} |\n")
+    _w(out, f"| ⚠ too many redirects | {too_many} |\n")
     _w(out, f"| ⏭ skipped | {skipped} |\n")
     _w(out, f"| **total** | **{total}** |\n")
 
@@ -49,6 +56,8 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
         _w(out, "| Line | Status | URL | Detail |\n|---|---|---|---|\n")
         for r in group_iter:
             status_icon = "❌" if r.status in (LinkStatus.BROKEN, LinkStatus.ERROR) else "↗"
+            if r.status == LinkStatus.TOO_MANY_REDIRECTS:
+                status_icon = "⚠"
             detail = _detail(r)
             _w(out, f"| {r.line} | {status_icon} {r.status.value} | `{r.url}` | {detail} |\n")
 
@@ -56,7 +65,11 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
 def _detail(r: LinkResult) -> str:
     if r.status == LinkStatus.REDIRECT:
         suffix = f" `[{r.http_code}]`" if r.http_code else ""
+        if r.redirect_chain:
+            return f"{' → '.join(f'`{u}`' for u in r.redirect_chain)}{suffix}"
         return f"→ `{r.resolved_url}`{suffix}"
+    if r.status == LinkStatus.TOO_MANY_REDIRECTS:
+        return r.error or ""
     if r.http_code and r.http_code >= 400:
         return f"`[{r.http_code}]`"
     if r.error:

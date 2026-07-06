@@ -23,13 +23,17 @@ def make_result(**kwargs: object) -> LinkResult:
 class TestLinkStatus:
     def test_all_values_present(self) -> None:
         values = {s.value for s in LinkStatus}
-        assert values == {"ok", "broken", "redirect", "skipped", "error"}
+        assert values == {
+            "ok", "broken", "redirect", "too_many_redirects", "skipped", "error",
+        }
 
 
 class TestLinkType:
     def test_all_values_present(self) -> None:
         values = {t.value for t in LinkType}
-        assert values == {"external", "internal", "anchor", "external_anchor"}
+        assert values == {
+            "external", "internal", "anchor", "external_anchor", "non_http_scheme",
+        }
 
 
 class TestLinkResult:

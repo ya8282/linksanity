@@ -140,10 +140,12 @@ async def crawl_page(
     semaphore: asyncio.Semaphore | None = None,
     timeout: int = 10,
     block_domains: frozenset[str] | None = None,
-) -> tuple[LinkResult, list[str]]:
-    """Visit a page, check its reachability, and return (result, hrefs).
+) -> tuple[LinkResult, list[str], set[str]]:
+    """Visit a page, check its reachability, and return (result, hrefs, element_ids).
 
     Combines check() and extract_links() into a single browser session.
+    element_ids is the set of id="..." values on the rendered page, used to
+    validate same-page anchor fragments (empty when the page isn't reachable).
     """
     _require_playwright()
     from playwright.async_api import Error as PlaywrightError
@@ -176,7 +178,7 @@ async def crawl_page(
                         source_file=source_file, line=line, url=url,
                         link_type=link_type, status=LinkStatus.ERROR,
                         error="no response",
-                    ), []
+                    ), [], set()
                 # Wait for JS to finish rendering navigation (SPAs build links client-side)
                 with contextlib.suppress(PlaywrightError):
                     await page.wait_for_load_state("networkidle", timeout=5000)
@@ -195,7 +197,7 @@ async def crawl_page(
                     http_code=code,
                     resolved_url=resolved if was_redirected else None,
                 )
-                # Extract links from any reachable page, including redirects
+                # Extract links and element ids from any reachable page, including redirects
                 if status in (LinkStatus.OK, LinkStatus.REDIRECT):
                     hrefs: list[str] = await page.eval_on_selector_all(
                         "a[href]",
@@ -205,15 +207,21 @@ async def crawl_page(
                         h for h in hrefs
                         if h and not any(h.startswith(s) for s in _SKIP_SCHEMES)
                     ]
+                    ids: list[str] = await page.eval_on_selector_all(
+                        "[id]",
+                        "els => els.map(e => e.id).filter(id => id)",
+                    )
+                    element_ids = set(ids)
                 else:
                     links = []
-                return result, links
+                    element_ids = set()
+                return result, links, element_ids
             except PlaywrightError as exc:
                 return LinkResult(
                     source_file=source_file, line=line, url=url,
                     link_type=link_type, status=LinkStatus.ERROR,
                     error=str(exc),
-                ), []
+                ), [], set()
         finally:
             await browser.close()
 

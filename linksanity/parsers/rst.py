@@ -7,13 +7,14 @@ from io import StringIO
 from pathlib import Path
 
 from docutils.core import publish_doctree
-from docutils.nodes import reference, target
+from docutils.nodes import image, reference, target
 from docutils.utils import Reporter
 
 
-def extract_links(path: Path) -> list[tuple[str, int]]:
+def extract_links(path: Path, *, include_images: bool = False) -> list[tuple[str, int]]:
     """Return (url, line) pairs extracted from an RST file.
 
+    When include_images is True, image :: directive uris are included too.
     Parse errors emit a warning and return an empty list.
     """
     try:
@@ -40,14 +41,21 @@ def extract_links(path: Path) -> list[tuple[str, int]]:
 
     for node in document.findall(reference):
         uri = node.get("refuri", "")
-        if isinstance(uri, str) and uri and not uri.startswith(("mailto:", "javascript:")):
+        if isinstance(uri, str) and uri:
             line: int = node.line or 0
             results.append((uri, line))
 
     for node in document.findall(target):
         uri = node.get("refuri", "")
-        if isinstance(uri, str) and uri and not uri.startswith(("mailto:", "javascript:")):
+        if isinstance(uri, str) and uri:
             line = node.line or 0
             results.append((uri, line))
+
+    if include_images:
+        for node in document.findall(image):
+            uri = node.get("uri", "")
+            if isinstance(uri, str) and uri:
+                line = node.line or 0
+                results.append((uri, line))
 
     return results

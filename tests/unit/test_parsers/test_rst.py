@@ -32,12 +32,14 @@ class TestExtractLinks:
         urls = [url for url, _ in extract_links(SAMPLE)]
         assert "https://in-literal.example.com" not in urls
 
-    def test_excludes_mailto(self) -> None:
+    def test_includes_mailto_for_reporting(self, tmp_path: Path) -> None:
+        # mailto: links are extracted; router.classify() reports them as
+        # skipped rather than silently dropping them (COV-04).
         content = "`Email <mailto:test@example.com>`_"
-        tmp = Path("/tmp/test_mailto.rst")
+        tmp = tmp_path / "test_mailto.rst"
         tmp.write_text(content)
         urls = [url for url, _ in extract_links(tmp)]
-        assert not any(u.startswith("mailto:") for u in urls)
+        assert any(u.startswith("mailto:") for u in urls)
 
     def test_returns_line_numbers(self) -> None:
         pairs = extract_links(SAMPLE)
@@ -67,3 +69,17 @@ class TestExtractLinks:
         f.write_text(content)
         urls = [url for url, _ in extract_links(f)]
         assert expected_url in urls
+
+
+class TestExtractImages:
+    def test_image_excluded_by_default(self, tmp_path: Path) -> None:
+        f = tmp_path / "test.rst"
+        f.write_text(".. image:: ./photo.png\n")
+        urls = [url for url, _ in extract_links(f)]
+        assert "./photo.png" not in urls
+
+    def test_image_included_when_requested(self, tmp_path: Path) -> None:
+        f = tmp_path / "test.rst"
+        f.write_text(".. image:: ./photo.png\n")
+        urls = [url for url, _ in extract_links(f, include_images=True)]
+        assert "./photo.png" in urls

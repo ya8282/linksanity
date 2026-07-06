@@ -9,10 +9,11 @@ from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
 
-def extract_links(path: Path) -> list[tuple[str, int]]:
+def extract_links(path: Path, *, include_images: bool = False) -> list[tuple[str, int]]:
     """Return (url, line) pairs extracted from a Markdown file.
 
     Links inside fenced code blocks and inline code spans are excluded.
+    When include_images is True, image ![]() targets are included too.
     Parse errors emit a warning and return an empty list.
     """
     try:
@@ -28,11 +29,12 @@ def extract_links(path: Path) -> list[tuple[str, int]]:
         warnings.warn(f"[linksanity] markdown parse error in {path}: {e}", stacklevel=2)
         return []
 
-    return _collect(tokens)
+    return _collect(tokens, include_images=include_images)
 
 
-def _collect(tokens: list[Token]) -> list[tuple[str, int]]:
+def _collect(tokens: list[Token], *, include_images: bool = False) -> list[tuple[str, int]]:
     results: list[tuple[str, int]] = []
+    target_types = ("link_open", "image") if include_images else ("link_open",)
     for token in tokens:
         # fence and code_block tokens are not inline — their content is code
         if token.type in ("fence", "code_block"):
@@ -40,9 +42,10 @@ def _collect(tokens: list[Token]) -> list[tuple[str, int]]:
         if token.type == "inline" and token.children:
             line = (token.map[0] + 1) if token.map else 1
             for child in token.children:
-                if child.type == "link_open":
-                    raw = child.attrGet("href")
+                if child.type in target_types:
+                    attr = "src" if child.type == "image" else "href"
+                    raw = child.attrGet(attr)
                     href = str(raw) if isinstance(raw, str) else ""
-                    if href and not href.startswith(("mailto:", "javascript:")):
+                    if href:
                         results.append((href, line))
     return results

@@ -39,6 +39,7 @@ async def check(
     ignore_domains: set[str] | None = None,
     timeout: int = 10,
     retries: int = 2,
+    max_redirects: int = 10,
 ) -> LinkResult:
     """Check an external URL and return a LinkResult.
 
@@ -68,11 +69,12 @@ async def check(
     try:
         async with httpx.AsyncClient(
             follow_redirects=True,
+            max_redirects=max_redirects,
             timeout=client_timeout,
             headers=_HEADERS,
         ) as client:
             return await _check_with_retry(
-                client, url, source_file, line, link_type, retries
+                client, url, source_file, line, link_type, retries, max_redirects
             )
     except Exception as exc:
         return LinkResult(
@@ -89,6 +91,7 @@ async def _check_with_retry(
     line: int,
     link_type: LinkType,
     retries: int,
+    max_redirects: int,
 ) -> LinkResult:
     last_exc: Exception | None = None
     for attempt in range(retries + 1):
@@ -98,6 +101,12 @@ async def _check_with_retry(
                 await asyncio.sleep(2 ** attempt)
                 continue
             return result
+        except httpx.TooManyRedirects:
+            return LinkResult(
+                source_file=source_file, line=line, url=url,
+                link_type=link_type, status=LinkStatus.TOO_MANY_REDIRECTS,
+                error=f"too many redirects (max {max_redirects})",
+            )
         except httpx.HTTPError as exc:
             last_exc = exc
             if attempt < retries:
@@ -127,11 +136,13 @@ async def _try_head(
         async with client.stream("GET", url) as stream_resp:
             code = stream_resp.status_code
             resolved = str(stream_resp.url)
+            history = [str(r.url) for r in stream_resp.history]
     else:
         code = resp.status_code
         resolved = str(resp.url)
+        history = [str(r.url) for r in resp.history]
 
-    return _make_result(url, source_file, line, link_type, code, resolved)
+    return _make_result(url, source_file, line, link_type, code, resolved, history)
 
 
 def _make_result(
@@ -141,10 +152,12 @@ def _make_result(
     link_type: LinkType,
     code: int,
     resolved_url: str,
+    history: list[str],
 ) -> LinkResult:
     # With follow_redirects=True, httpx resolves the full chain.
     # A redirect is detected when the final URL differs from the original.
     was_redirected = resolved_url.rstrip("/") != url.rstrip("/")
+    chain = [*history, resolved_url] if was_redirected and history else None
 
     if code >= 400:
         status = LinkStatus.BROKEN
@@ -161,6 +174,7 @@ def _make_result(
         status=status,
         http_code=code,
         resolved_url=resolved_url if was_redirected else None,
+        redirect_chain=chain,
     )
 
 

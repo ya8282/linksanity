@@ -12,12 +12,18 @@ from rich.console import Console
 from linksanity.queue import LinkResult, LinkStatus
 
 # Only these statuses appear in the per-file output; OK/SKIPPED are silent
-_NOTABLE = {LinkStatus.BROKEN, LinkStatus.ERROR, LinkStatus.REDIRECT}
+_NOTABLE = {
+    LinkStatus.BROKEN,
+    LinkStatus.ERROR,
+    LinkStatus.REDIRECT,
+    LinkStatus.TOO_MANY_REDIRECTS,
+}
 
 _LABEL: dict[LinkStatus, tuple[str, str]] = {
     LinkStatus.BROKEN: ("BROKEN  ", "bold red"),
     LinkStatus.ERROR: ("ERROR   ", "bold red"),
     LinkStatus.REDIRECT: ("REDIRECT", "yellow"),
+    LinkStatus.TOO_MANY_REDIRECTS: ("TOOMANY ", "yellow"),
     LinkStatus.SKIPPED: ("SKIPPED ", "dim"),
     LinkStatus.OK: ("OK      ", "green"),
 }
@@ -53,16 +59,19 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
     ok = counts[LinkStatus.OK]
     broken = counts[LinkStatus.BROKEN] + counts[LinkStatus.ERROR]
     redirect = counts[LinkStatus.REDIRECT]
+    too_many = counts[LinkStatus.TOO_MANY_REDIRECTS]
     skipped = counts[LinkStatus.SKIPPED]
 
     console.print()
     console.rule(style="dim")
     broken_style = "bold red" if broken else "dim"
     redirect_style = "yellow" if redirect else "dim"
+    too_many_style = "yellow" if too_many else "dim"
     console.print(
         f"  [green]ok={ok}[/green]"
         f"   [{broken_style}]broken={broken}[/{broken_style}]"
         f"   [{redirect_style}]redirect={redirect}[/{redirect_style}]"
+        f"   [{too_many_style}]too_many_redirects={too_many}[/{too_many_style}]"
         f"   [dim]skipped={skipped}[/dim]"
     )
 
@@ -70,7 +79,11 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
 def _detail(r: LinkResult) -> str:
     if r.status == LinkStatus.REDIRECT:
         suffix = f" [{r.http_code}]" if r.http_code else ""
+        if r.redirect_chain:
+            return f" → {' → '.join(r.redirect_chain)}{suffix}"
         return f" → {r.resolved_url}{suffix}"
+    if r.status == LinkStatus.TOO_MANY_REDIRECTS:
+        return f" — {r.error}"
     if r.http_code and r.http_code >= 400:
         return f" [{r.http_code}]"
     if r.error:

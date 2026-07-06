@@ -15,12 +15,16 @@ def check(
     link_type: LinkType,
     *,
     check_anchors: bool = False,
+    link_style: str | None = None,
 ) -> LinkResult:
     """Resolve and validate an internal or anchor link.
 
     For ANCHOR links (#fragment), validates the fragment exists in the source
     file when check_anchors is True.
     For INTERNAL links (./path or ../path), validates the target file exists.
+    If the direct path doesn't exist and link_style is set (mkdocs, docusaurus,
+    sphinx), also tries that SSG's built-URL conventions (extensionless links,
+    directory-index links) against the source files on disk.
     """
     source_path = Path(source_file)
 
@@ -38,14 +42,18 @@ def check(
 
     # Check file existence for non-pure-anchor links
     if path_part and not target_path.exists():
-        return LinkResult(
-            source_file=source_file,
-            line=line,
-            url=url,
-            link_type=link_type,
-            status=LinkStatus.BROKEN,
-            error=f"file not found: {target_path}",
-        )
+        resolved = _resolve_via_preset(source_path.parent, path_part, link_style)
+        if resolved is not None:
+            target_path = resolved
+        else:
+            return LinkResult(
+                source_file=source_file,
+                line=line,
+                url=url,
+                link_type=link_type,
+                status=LinkStatus.BROKEN,
+                error=f"file not found: {target_path}",
+            )
 
     # Optionally validate anchor fragment
     if fragment and check_anchors and not _anchor_exists(target_path, fragment):
@@ -65,6 +73,38 @@ def check(
         link_type=link_type,
         status=LinkStatus.OK,
     )
+
+
+def _resolve_via_preset(base_dir: Path, path_part: str, link_style: str | None) -> Path | None:
+    """Try SSG built-URL conventions for a relative link that didn't resolve directly.
+
+    Docs authors often write links the way the built site serves them
+    (extensionless, or as a directory), not as the raw source-file path.
+    Returns the first candidate source file that exists, or None.
+    """
+    if not link_style:
+        return None
+
+    stripped = path_part.rstrip("/")
+    candidates: list[str]
+    if link_style == "mkdocs":
+        candidates = [f"{stripped}.md", f"{stripped}/index.md"]
+    elif link_style == "docusaurus":
+        candidates = [f"{stripped}.md", f"{stripped}.mdx", f"{stripped}/index.md"]
+    elif link_style == "sphinx":
+        if stripped.endswith(".html"):
+            base = stripped[: -len(".html")]
+            candidates = [f"{base}.rst", f"{base}.md", f"{base}/index.rst"]
+        else:
+            candidates = [f"{stripped}.rst", f"{stripped}/index.rst"]
+    else:
+        return None
+
+    for candidate in candidates:
+        candidate_path = (base_dir / candidate).resolve()
+        if candidate_path.exists():
+            return candidate_path
+    return None
 
 
 def _anchor_exists(path: Path, fragment: str) -> bool:

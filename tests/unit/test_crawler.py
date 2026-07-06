@@ -13,20 +13,22 @@ from linksanity.queue import LinkResult, LinkStatus, LinkType
 START = "http://example.com"
 
 
-def _ok(url: str, links: list[str] | None = None) -> tuple[LinkResult, list[str]]:
+def _ok(
+    url: str, links: list[str] | None = None, ids: set[str] | None = None
+) -> tuple[LinkResult, list[str], set[str]]:
     result = LinkResult(
         source_file=START, line=0, url=url,
         link_type=LinkType.EXTERNAL, status=LinkStatus.OK, http_code=200,
     )
-    return result, links or []
+    return result, links or [], ids or set()
 
 
-def _broken(url: str) -> tuple[LinkResult, list[str]]:
+def _broken(url: str) -> tuple[LinkResult, list[str], set[str]]:
     result = LinkResult(
         source_file=START, line=0, url=url,
         link_type=LinkType.EXTERNAL, status=LinkStatus.BROKEN, http_code=404,
     )
-    return result, []
+    return result, [], set()
 
 
 def _config(**kwargs: object) -> Config:
@@ -176,6 +178,67 @@ class TestIgnoreDomains:
 
         results = [r for r in queue.results() if r.url == external]
         assert results[0].status == LinkStatus.SKIPPED
+
+
+# ── Anchor validation (COV-01) ─────────────────────────────────────────────────
+
+class TestAnchorValidation:
+    @pytest.mark.asyncio
+    async def test_valid_same_domain_anchor_is_ok(self) -> None:
+        page2 = "http://example.com/page2"
+
+        async def mock_crawl(url: str, *args: object, **kwargs: object) -> tuple:
+            if url == START:
+                return _ok(START, [f"{page2}#section"])
+            return _ok(page2, ids={"section"})
+
+        with patch("linksanity.crawler.crawl_page", side_effect=mock_crawl):
+            queue = await run_crawl(START, _config(check_anchors=True))
+
+        results = [r for r in queue.results() if r.url == f"{page2}#section"]
+        assert results and results[0].status == LinkStatus.OK
+
+    @pytest.mark.asyncio
+    async def test_broken_same_domain_anchor_is_broken(self) -> None:
+        page2 = "http://example.com/page2"
+
+        async def mock_crawl(url: str, *args: object, **kwargs: object) -> tuple:
+            if url == START:
+                return _ok(START, [f"{page2}#missing"])
+            return _ok(page2, ids={"section"})
+
+        with patch("linksanity.crawler.crawl_page", side_effect=mock_crawl):
+            queue = await run_crawl(START, _config(check_anchors=True))
+
+        results = [r for r in queue.results() if r.url == f"{page2}#missing"]
+        assert results and results[0].status == LinkStatus.BROKEN
+
+    @pytest.mark.asyncio
+    async def test_anchor_not_checked_when_disabled(self) -> None:
+        page2 = "http://example.com/page2"
+
+        async def mock_crawl(url: str, *args: object, **kwargs: object) -> tuple:
+            if url == START:
+                return _ok(START, [f"{page2}#missing"])
+            return _ok(page2, ids=set())
+
+        with patch("linksanity.crawler.crawl_page", side_effect=mock_crawl):
+            queue = await run_crawl(START, _config(check_anchors=False))
+
+        assert not any(r.url == f"{page2}#missing" for r in queue.results())
+
+    @pytest.mark.asyncio
+    async def test_anchor_on_uncrawled_page_is_skipped(self) -> None:
+        page2 = "http://example.com/page2"
+
+        async def mock_crawl(url: str, *args: object, **kwargs: object) -> tuple:
+            return _ok(START, [f"{page2}#section"])
+
+        with patch("linksanity.crawler.crawl_page", side_effect=mock_crawl):
+            queue = await run_crawl(START, _config(check_anchors=True, max_pages=1))
+
+        results = [r for r in queue.results() if r.url == f"{page2}#section"]
+        assert results and results[0].status == LinkStatus.SKIPPED
 
 
 # ── Exception handling ────────────────────────────────────────────────────────

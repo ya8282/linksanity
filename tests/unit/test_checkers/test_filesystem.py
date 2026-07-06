@@ -202,6 +202,61 @@ class TestAnchorExistsViaCheck:
             f.chmod(0o644)
 
 
+class TestLinkStylePresets:
+    def test_mkdocs_extensionless_link_resolves(self, tmp_path: Path) -> None:
+        src = tmp_path / "index.md"
+        target = tmp_path / "guide.md"
+        src.write_text("# Index")
+        target.write_text("# Guide")
+
+        result = check("./guide", str(src), 1, LinkType.INTERNAL, link_style="mkdocs")
+        assert result.status == LinkStatus.OK
+
+    def test_mkdocs_directory_link_resolves_to_index(self, tmp_path: Path) -> None:
+        src = tmp_path / "index.md"
+        (tmp_path / "guide").mkdir()
+        target = tmp_path / "guide" / "index.md"
+        src.write_text("# Index")
+        target.write_text("# Guide")
+
+        result = check("./guide/", str(src), 1, LinkType.INTERNAL, link_style="mkdocs")
+        assert result.status == LinkStatus.OK
+
+    def test_docusaurus_extensionless_link_resolves(self, tmp_path: Path) -> None:
+        src = tmp_path / "index.md"
+        target = tmp_path / "guide.mdx"
+        src.write_text("# Index")
+        target.write_text("# Guide")
+
+        result = check("./guide", str(src), 1, LinkType.INTERNAL, link_style="docusaurus")
+        assert result.status == LinkStatus.OK
+
+    def test_sphinx_html_link_resolves_to_rst(self, tmp_path: Path) -> None:
+        src = tmp_path / "index.rst"
+        target = tmp_path / "guide.rst"
+        src.write_text("Index\n=====\n")
+        target.write_text("Guide\n=====\n")
+
+        result = check("./guide.html", str(src), 1, LinkType.INTERNAL, link_style="sphinx")
+        assert result.status == LinkStatus.OK
+
+    def test_no_preset_still_broken(self, tmp_path: Path) -> None:
+        src = tmp_path / "index.md"
+        target = tmp_path / "guide.md"
+        src.write_text("# Index")
+        target.write_text("# Guide")
+
+        result = check("./guide", str(src), 1, LinkType.INTERNAL)
+        assert result.status == LinkStatus.BROKEN
+
+    def test_preset_does_not_mask_truly_broken_link(self, tmp_path: Path) -> None:
+        src = tmp_path / "index.md"
+        src.write_text("# Index")
+
+        result = check("./nowhere", str(src), 1, LinkType.INTERNAL, link_style="mkdocs")
+        assert result.status == LinkStatus.BROKEN
+
+
 class TestCheckResultFields:
     def test_result_preserves_source_and_line(self, tmp_path: Path) -> None:
         src = tmp_path / "a.md"

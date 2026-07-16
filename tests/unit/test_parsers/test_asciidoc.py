@@ -74,6 +74,7 @@ class TestExtractLinks:
             "link:https://skip-one.example.com[Skip]\n"
             "----\n"
             "link:https://keep.example.com[Keep]\n"
+            "\n"
             "----\n"
             "link:https://skip-two.example.com[Skip]\n"
             "----\n"
@@ -89,3 +90,112 @@ class TestExtractLinks:
         f.write_text(content)
         pairs = extract_links(f)
         assert ("https://third-line-down.example.com", 4) in pairs
+
+    # -- Bug 1: bare autolink regex swallows trailing sentence punctuation --
+
+    def test_bare_autolink_strips_trailing_period(self, tmp_path: Path) -> None:
+        f = tmp_path / "period.adoc"
+        f.write_text("See https://example.com. It works.\n")
+        urls = [url for url, _ in extract_links(f)]
+        assert urls == ["https://example.com"]
+
+    def test_bare_autolink_strips_trailing_paren(self, tmp_path: Path) -> None:
+        f = tmp_path / "paren.adoc"
+        f.write_text("(see https://example.com)\n")
+        urls = [url for url, _ in extract_links(f)]
+        assert urls == ["https://example.com"]
+
+    def test_bare_autolink_strips_trailing_period_mid_sentence(
+        self, tmp_path: Path
+    ) -> None:
+        f = tmp_path / "midsentence.adoc"
+        f.write_text("Visit https://example.com. Then visit https://other.example.com.\n")
+        urls = [url for url, _ in extract_links(f)]
+        assert urls == ["https://example.com", "https://other.example.com"]
+
+    def test_bare_autolink_preserves_meaningful_trailing_chars(
+        self, tmp_path: Path
+    ) -> None:
+        f = tmp_path / "query.adoc"
+        f.write_text("See https://example.com/page?id=1 for details.\n")
+        urls = [url for url, _ in extract_links(f)]
+        assert urls == ["https://example.com/page?id=1"]
+
+    # -- Bug 2: listing-block delimiter collides with two-line headings --
+
+    def test_setext_heading_underline_not_treated_as_listing_open(
+        self, tmp_path: Path
+    ) -> None:
+        content = (
+            "My Heading\n"
+            "----------\n"
+            "\n"
+            "link:https://after-heading.example.com[After]\n"
+        )
+        f = tmp_path / "heading.adoc"
+        f.write_text(content)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            pairs = extract_links(f)
+        assert ("https://after-heading.example.com", 4) in pairs
+        assert len(w) == 0
+
+    def test_setext_heading_like_passthrough_underline_not_treated_as_open(
+        self, tmp_path: Path
+    ) -> None:
+        content = (
+            "Some Title\n"
+            "++++\n"
+            "\n"
+            "link:https://after-plus-heading.example.com[After]\n"
+        )
+        f = tmp_path / "plusheading.adoc"
+        f.write_text(content)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            pairs = extract_links(f)
+        assert ("https://after-plus-heading.example.com", 4) in pairs
+        assert len(w) == 0
+
+    def test_listing_block_still_skipped_when_blank_line_precedes_open(
+        self, tmp_path: Path
+    ) -> None:
+        content = (
+            "Intro text.\n"
+            "\n"
+            "----\n"
+            "link:https://in-block.example.com[Skip]\n"
+            "----\n"
+        )
+        f = tmp_path / "realblock.adoc"
+        f.write_text(content)
+        urls = [url for url, _ in extract_links(f)]
+        assert "https://in-block.example.com" not in urls
+
+    # -- Bug 3: unterminated block silently swallows to EOF with no warning --
+
+    def test_unterminated_listing_block_warns(self, tmp_path: Path) -> None:
+        content = "----\nlink:https://swallowed.example.com[Swallowed]\n"
+        f = tmp_path / "unterminated_listing.adoc"
+        f.write_text(content)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            pairs = extract_links(f)
+        urls = [url for url, _ in pairs]
+        assert "https://swallowed.example.com" not in urls
+        assert len(w) == 1
+        assert "unterminated" in str(w[0].message)
+        assert "listing" in str(w[0].message)
+
+    def test_unterminated_passthrough_block_warns(self, tmp_path: Path) -> None:
+        content = "++++\nlink:https://swallowed-pt.example.com[Swallowed]\n"
+        f = tmp_path / "unterminated_passthrough.adoc"
+        f.write_text(content)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            pairs = extract_links(f)
+        urls = [url for url, _ in pairs]
+        assert "https://swallowed-pt.example.com" not in urls
+        assert len(w) == 1
+        assert "unterminated" in str(w[0].message)
+        assert "passthrough" in str(w[0].message)

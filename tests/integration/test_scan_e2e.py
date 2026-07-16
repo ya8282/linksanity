@@ -8,10 +8,14 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 from typer.testing import CliRunner
 
 from linksanity.cli import app
+from linksanity.config import Config
+from linksanity.queue import LinkStatus
+from linksanity.scanner import run_scan
 
 DOCS_DIR = Path(__file__).parent.parent / "fixtures" / "docs"
 
@@ -253,6 +257,171 @@ class TestScanBaseline:
             app, ["scan", str(f), "--baseline", str(tmp_path / "no-such-file.json")]
         )
         assert result.exit_code == 1
+
+
+# ── New format wiring (Task 29) ────────────────────────────────────────────────
+#
+# All fixture content below uses internal (relative) links only, so these
+# tests never touch the network -- they exercise _expand_paths()/_parse()
+# suffix dispatch and filesystem.check(), nothing more.
+
+_DOCBOOK_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<article xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <title>Doc</title>
+  <sect1>
+    <title>Section</title>
+    <para><link xlink:href="{target}">x</link></para>
+  </sect1>
+</article>
+"""
+
+
+class TestScanNewFormatsDirect:
+    """Each new suffix is dispatched to the right parser when scanned directly."""
+
+    def test_adoc_file_scanned(self, tmp_path: Path) -> None:
+        f = tmp_path / "doc.adoc"
+        f.write_text("An internal link: link:missing.adoc[Missing].\n")
+        result = runner.invoke(app, ["scan", str(f)])
+        assert result.exit_code == 1
+        assert "missing.adoc" in result.output
+
+    def test_asciidoc_alt_suffix_scanned(self, tmp_path: Path) -> None:
+        f = tmp_path / "doc.asciidoc"
+        f.write_text("An internal link: link:missing.asciidoc[Missing].\n")
+        result = runner.invoke(app, ["scan", str(f)])
+        assert result.exit_code == 1
+        assert "missing.asciidoc" in result.output
+
+    def test_mdx_file_scanned(self, tmp_path: Path) -> None:
+        f = tmp_path / "doc.mdx"
+        f.write_text('[broken](missing.mdx)\n\n<a href="also-missing.mdx">x</a>\n')
+        result = runner.invoke(app, ["scan", str(f)])
+        assert result.exit_code == 1
+        assert "missing.mdx" in result.output
+        assert "also-missing.mdx" in result.output
+
+    def test_ipynb_file_scanned(self, tmp_path: Path) -> None:
+        notebook = {
+            "cells": [{"cell_type": "markdown", "source": "[broken](missing.md)\n"}]
+        }
+        f = tmp_path / "nb.ipynb"
+        f.write_text(json.dumps(notebook))
+        result = runner.invoke(app, ["scan", str(f)])
+        assert result.exit_code == 1
+        assert "missing.md" in result.output
+
+    def test_docbook_xml_scanned(self, tmp_path: Path) -> None:
+        f = tmp_path / "doc.xml"
+        f.write_text(_DOCBOOK_XML.format(target="missing.html"))
+        result = runner.invoke(app, ["scan", str(f)])
+        assert result.exit_code == 1
+        assert "missing.html" in result.output
+
+    def test_dbk_suffix_scanned(self, tmp_path: Path) -> None:
+        f = tmp_path / "doc.dbk"
+        f.write_text(_DOCBOOK_XML.format(target="missing.html"))
+        result = runner.invoke(app, ["scan", str(f)])
+        assert result.exit_code == 1
+        assert "missing.html" in result.output
+
+    def test_nondocbook_xml_yields_no_links(self, tmp_path: Path) -> None:
+        # Root tag isn't a recognized DocBook element -> extract_links() is a
+        # no-op, so this must never trigger a real network check either.
+        f = tmp_path / "config.xml"
+        f.write_text(
+            '<?xml version="1.0"?>\n<config>\n'
+            '  <setting name="debug">true</setting>\n'
+            '  <ulink url="https://example.com/should-not-be-found"/>\n'
+            "</config>\n"
+        )
+        result = runner.invoke(app, ["scan", str(f)])
+        assert result.exit_code == 0, result.output
+
+
+class TestScanNewFormatsDirectoryMode:
+    def test_directory_scan_picks_up_all_new_suffixes(self, tmp_path: Path) -> None:
+        (tmp_path / "a.adoc").write_text("link:missing-adoc.md[x]\n")
+        (tmp_path / "b.asciidoc").write_text("link:missing-asciidoc.md[x]\n")
+        (tmp_path / "c.mdx").write_text("[x](missing-mdx.md)\n")
+        (tmp_path / "d.ipynb").write_text(
+            json.dumps(
+                {"cells": [{"cell_type": "markdown", "source": "[x](missing-ipynb.md)\n"}]}
+            )
+        )
+        (tmp_path / "e.xml").write_text(_DOCBOOK_XML.format(target="missing-xml.md"))
+        (tmp_path / "f.dbk").write_text(_DOCBOOK_XML.format(target="missing-dbk.md"))
+
+        result = runner.invoke(app, ["scan", str(tmp_path)])
+
+        assert result.exit_code == 1
+        for missing in (
+            "missing-adoc.md",
+            "missing-asciidoc.md",
+            "missing-mdx.md",
+            "missing-ipynb.md",
+            "missing-xml.md",
+            "missing-dbk.md",
+        ):
+            assert missing in result.output, f"{missing} not found in scan output"
+
+
+class TestNotebookCellWiring:
+    """.ipynb goes through run_scan's direct queue.add(cell=...) path, not _parse()."""
+
+    @pytest.mark.asyncio
+    async def test_ipynb_links_queued_with_correct_cell_and_line(
+        self, tmp_path: Path
+    ) -> None:
+        notebook = {
+            "cells": [
+                {"cell_type": "code", "source": "x = 1\n"},
+                {
+                    "cell_type": "markdown",
+                    "source": "intro\n\n[a](missing-a.md)\n",
+                },
+                {"cell_type": "markdown", "source": "[b](missing-b.md)\n"},
+            ]
+        }
+        f = tmp_path / "nb.ipynb"
+        f.write_text(json.dumps(notebook))
+
+        queue = await run_scan([str(f)], Config())
+        results = {r.url: r for r in queue.results()}
+
+        assert results["missing-a.md"].cell == 2
+        assert results["missing-a.md"].line == 3
+        assert results["missing-a.md"].status == LinkStatus.BROKEN
+
+        assert results["missing-b.md"].cell == 3
+        assert results["missing-b.md"].line == 1
+        assert results["missing-b.md"].status == LinkStatus.BROKEN
+
+
+class TestDocBookXrefDeferredResolution:
+    """<xref> correctness lands in Tasks 30/31 -- this documents the expected,
+    still-broken checkpoint behavior for Task 29 rather than a regression."""
+
+    def test_xref_sentinel_is_not_yet_resolved(self, tmp_path: Path) -> None:
+        content = """<?xml version="1.0"?>
+<article xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <title>Doc</title>
+  <sect1><title>S</title><para>See <xref linkend="setup-section"/>.</para></sect1>
+  <sect1 id="setup-section"><title>Setup</title></sect1>
+</article>
+"""
+        f = tmp_path / "doc.xml"
+        f.write_text(content)
+        result = runner.invoke(app, ["scan", str(f)])
+
+        # Even though "setup-section" is a valid id in this same document, the
+        # corpus-wide ID index (Task 30) and the docbook-xref dispatch branch
+        # (Task 31) don't exist yet, so the "docbook-xref:setup-section"
+        # sentinel URL falls through to filesystem.check() and is treated as
+        # a broken relative path. This is the expected state at this
+        # checkpoint, not a bug introduced by this task.
+        assert result.exit_code == 1
+        assert "docbook-xref:setup-section" in result.output
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

@@ -60,7 +60,8 @@ def _build_body(broken: list[LinkResult]) -> str:
     for _sf, group_iter in groupby(by_file, key=attrgetter("source_file")):
         for r in group_iter:
             detail = f"`[{r.http_code}]`" if r.http_code else (r.error or "")
-            lines.append(f"| `{r.source_file}` | {r.line} | `{r.url}` | {detail} |")
+            line_col = f"cell {r.cell}, line {r.line}" if r.cell is not None else f"{r.line}"
+            lines.append(f"| `{r.source_file}` | {line_col} | `{r.url}` | {detail} |")
     lines.append("\n_Opened by [linksanity](https://github.com/linksanity/linksanity)._")
     return "\n".join(lines)
 

@@ -46,7 +46,10 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
             console.print(f"[bold]{source_file}[/bold]")
             for r in group_iter:
                 label, style = _LABEL[r.status]
-                line_col = f"line {r.line:>4}"
+                if r.cell is not None:
+                    line_col = f"cell {r.cell}, line {r.line:>4}"
+                else:
+                    line_col = f"line {r.line:>4}"
                 detail = _detail(r)
                 console.print(
                     f"  [{style}]{label}[/{style}]  {line_col}  {r.url}{detail}"

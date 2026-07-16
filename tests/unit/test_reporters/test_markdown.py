@@ -99,6 +99,16 @@ class TestMarkdownDetails:
         out = _capture([r])
         assert "99" in out
 
+    def test_no_cell_text_when_cell_is_none(self) -> None:
+        r = _result(LinkStatus.BROKEN, line=99, http_code=404)
+        out = _capture([r])
+        assert "cell" not in out
+
+    def test_cell_shown_when_set(self) -> None:
+        r = _result(LinkStatus.BROKEN, line=99, http_code=404, cell=3)
+        out = _capture([r])
+        assert "cell 3, line 99" in out
+
     def test_ok_links_not_in_details(self) -> None:
         results = [
             _result(LinkStatus.OK, url="https://ok.example.com"),

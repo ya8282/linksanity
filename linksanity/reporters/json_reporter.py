@@ -15,6 +15,7 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
         {
             "source_file": r.source_file,
             "line": r.line,
+            "cell": r.cell,
             "url": r.url,
             "link_type": r.link_type.value,
             "status": r.status.value,

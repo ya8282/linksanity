@@ -59,7 +59,8 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
             if r.status == LinkStatus.TOO_MANY_REDIRECTS:
                 status_icon = "⚠"
             detail = _detail(r)
-            _w(out, f"| {r.line} | {status_icon} {r.status.value} | `{r.url}` | {detail} |\n")
+            line_col = f"cell {r.cell}, line {r.line}" if r.cell is not None else f"{r.line}"
+            _w(out, f"| {line_col} | {status_icon} {r.status.value} | `{r.url}` | {detail} |\n")
 
 
 def _detail(r: LinkResult) -> str:

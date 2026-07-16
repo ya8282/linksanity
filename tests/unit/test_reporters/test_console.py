@@ -72,6 +72,16 @@ class TestBroken:
         out = _capture([r])
         assert "42" in out
 
+    def test_no_cell_text_when_cell_is_none(self) -> None:
+        r = _result(LinkStatus.BROKEN, line=42, http_code=404)
+        out = _capture([r])
+        assert "cell" not in out
+
+    def test_cell_shown_when_set(self) -> None:
+        r = _result(LinkStatus.BROKEN, line=42, http_code=404, cell=3)
+        out = _capture([r])
+        assert "cell 3, line   42" in out
+
 
 # ── Redirect links ────────────────────────────────────────────────────────────
 

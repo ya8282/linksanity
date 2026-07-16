@@ -25,6 +25,7 @@ def _result(
     source_file: str = "docs/index.md",
     line: int = 1,
     http_code: int | None = 404,
+    cell: int | None = None,
 ) -> LinkResult:
     return LinkResult(
         source_file=source_file,
@@ -33,6 +34,7 @@ def _result(
         link_type=LinkType.EXTERNAL,
         status=status,
         http_code=http_code,
+        cell=cell,
     )
 
 
@@ -160,6 +162,16 @@ class TestBodyContent:
         r = _result()
         body = _build_body([r])
         assert "|" in body  # Markdown table
+
+    def test_no_cell_text_when_cell_is_none(self) -> None:
+        r = _result(line=99)
+        body = _build_body([r])
+        assert "cell" not in body
+
+    def test_cell_shown_when_set(self) -> None:
+        r = _result(line=99, cell=3)
+        body = _build_body([r])
+        assert "cell 3, line 99" in body
 
 
 # ── _find_existing_issue helper ───────────────────────────────────────────────

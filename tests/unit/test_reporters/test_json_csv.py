@@ -69,6 +69,20 @@ class TestJsonReporter:
         assert row["resolved_url"] is None
         assert row["error"] is None
 
+    def test_cell_is_null_when_unset(self) -> None:
+        r = _result(LinkStatus.OK)
+        buf = io.StringIO()
+        json_report([r], file=buf)
+        row = json.loads(buf.getvalue())[0]
+        assert row["cell"] is None
+
+    def test_cell_is_integer_when_set(self) -> None:
+        r = _result(LinkStatus.OK, cell=3)
+        buf = io.StringIO()
+        json_report([r], file=buf)
+        row = json.loads(buf.getvalue())[0]
+        assert row["cell"] == 3
+
     def test_link_type_as_string(self) -> None:
         r = _result(LinkStatus.OK, link_type=LinkType.INTERNAL)
         buf = io.StringIO()
@@ -127,6 +141,27 @@ class TestCsvReporter:
         assert rows[0]["http_code"] == ""
         assert rows[0]["resolved_url"] == ""
         assert rows[0]["error"] == ""
+
+    def test_cell_column_present_in_header(self) -> None:
+        buf = io.StringIO()
+        csv_report([], file=buf)
+        reader = csv.reader(io.StringIO(buf.getvalue()))
+        header = next(reader)
+        assert "cell" in header
+
+    def test_cell_empty_string_when_unset(self) -> None:
+        r = _result(LinkStatus.OK)
+        buf = io.StringIO()
+        csv_report([r], file=buf)
+        rows = list(csv.DictReader(io.StringIO(buf.getvalue())))
+        assert rows[0]["cell"] == ""
+
+    def test_cell_value_when_set(self) -> None:
+        r = _result(LinkStatus.OK, cell=3)
+        buf = io.StringIO()
+        csv_report([r], file=buf)
+        rows = list(csv.DictReader(io.StringIO(buf.getvalue())))
+        assert rows[0]["cell"] == "3"
 
     def test_multiple_rows(self) -> None:
         results = [_result(LinkStatus.OK), _result(LinkStatus.BROKEN, http_code=404)]

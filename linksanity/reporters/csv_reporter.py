@@ -18,6 +18,7 @@ _FIELDS = [
     "resolved_url",
     "error",
     "redirect_chain",
+    "cell",
 ]
 
 
@@ -37,5 +38,6 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
                 "resolved_url": r.resolved_url or "",
                 "error": r.error or "",
                 "redirect_chain": " -> ".join(r.redirect_chain) if r.redirect_chain else "",
+                "cell": r.cell if r.cell is not None else "",
             }
         )

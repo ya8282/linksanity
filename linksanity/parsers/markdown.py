@@ -9,6 +9,18 @@ from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
 
+def parse_markdown_string(content: str, *, include_images: bool = False) -> list[tuple[str, int]]:
+    """Parse already-loaded Markdown content and extract (url, line) pairs.
+
+    Links inside fenced code blocks and inline code spans are excluded.
+    When include_images is True, image ![]() targets are included too.
+    Parse errors propagate to the caller.
+    """
+    md = MarkdownIt().enable("linkify")
+    tokens = md.parse(content)
+    return _collect(tokens, include_images=include_images)
+
+
 def extract_links(path: Path, *, include_images: bool = False) -> list[tuple[str, int]]:
     """Return (url, line) pairs extracted from a Markdown file.
 
@@ -23,14 +35,10 @@ def extract_links(path: Path, *, include_images: bool = False) -> list[tuple[str
         return []
 
     try:
-        md = MarkdownIt().enable("linkify")
-        tokens = md.parse(content)
+        return parse_markdown_string(content, include_images=include_images)
     except Exception as e:  # noqa: BLE001
         warnings.warn(f"[linksanity] markdown parse error in {path}: {e}", stacklevel=2)
         return []
-
-    return _collect(tokens, include_images=include_images)
-
 
 def _collect(tokens: list[Token], *, include_images: bool = False) -> list[tuple[str, int]]:
     results: list[tuple[str, int]] = []

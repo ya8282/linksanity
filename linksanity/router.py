@@ -44,6 +44,8 @@ async def dispatch(
     config: Config,
     http_sem: asyncio.Semaphore,
     pw_sem: asyncio.Semaphore,
+    *,
+    cell: int | None = None,
 ) -> LinkResult:
     """Route a link to the correct checker and return its result."""
     if link_type == LinkType.NON_HTTP_SCHEME:
@@ -59,12 +61,14 @@ async def dispatch(
             url, source_file, line, link_type,
             check_anchors=config.check_anchors,
             link_style=config.link_style,
+            cell=cell,
         )
 
     if config.skip_urls and url_is_skipped(url, config.skip_urls):
         return LinkResult(
             source_file=source_file, line=line, url=url,
             link_type=link_type, status=LinkStatus.SKIPPED,
+            cell=cell,
         )
 
     domain = urlparse(url).netloc.lower()
@@ -74,6 +78,7 @@ async def dispatch(
             url, source_file, line, link_type,
             semaphore=pw_sem,
             timeout=config.timeout,
+            cell=cell,
         )
 
     async with http_sem:
@@ -83,6 +88,7 @@ async def dispatch(
             timeout=config.timeout,
             retries=config.retry,
             max_redirects=config.max_redirects,
+            cell=cell,
         )
 
 

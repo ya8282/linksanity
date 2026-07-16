@@ -301,7 +301,7 @@ Register linksanity as a tool so an AI agent can call it on demand:
 }
 ```
 
-Invoke it in your MCP server by shelling out to `linksanity scan <paths> --format json --output /tmp/results.json` and returning the parsed JSON.
+Invoke it in your MCP server by shelling out to `linksanity scan <paths> --format json --output /tmp/results.json` and returning the parsed JSON. In other words, your tool handler spawns the `linksanity` CLI as a child process, waits for it to finish writing the results file, then reads and returns that JSON — the CLI itself is the stable interface, not linksanity's internal Python modules.
 
 ### Claude Code / claude-code tool call
 

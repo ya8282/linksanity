@@ -80,6 +80,7 @@ async def check(
     *,
     semaphore: asyncio.Semaphore | None = None,
     timeout: int = 10,
+    cell: int | None = None,
 ) -> LinkResult:
     """Check whether a URL is reachable using a headless browser.
 
@@ -105,6 +106,7 @@ async def check(
                         source_file=source_file, line=line, url=url,
                         link_type=link_type, status=LinkStatus.ERROR,
                         error="no response",
+                        cell=cell,
                     )
                 code = response.status
                 resolved = page.url
@@ -120,12 +122,14 @@ async def check(
                     link_type=link_type, status=status,
                     http_code=code,
                     resolved_url=resolved if was_redirected else None,
+                    cell=cell,
                 )
             except PlaywrightError as exc:
                 return LinkResult(
                     source_file=source_file, line=line, url=url,
                     link_type=link_type, status=LinkStatus.ERROR,
                     error=str(exc),
+                    cell=cell,
                 )
         finally:
             await browser.close()

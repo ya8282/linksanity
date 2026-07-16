@@ -40,6 +40,7 @@ async def check(
     timeout: int = 10,
     retries: int = 2,
     max_redirects: int = 10,
+    cell: int | None = None,
 ) -> LinkResult:
     """Check an external URL and return a LinkResult.
 
@@ -57,12 +58,14 @@ async def check(
             source_file=source_file, line=line, url=url,
             link_type=link_type, status=LinkStatus.SKIPPED,
             error="skipped: private/loopback address",
+            cell=cell,
         )
 
     if ignore_domains and _domain_match(domain, ignore_domains):
         return LinkResult(
             source_file=source_file, line=line, url=url,
             link_type=link_type, status=LinkStatus.SKIPPED,
+            cell=cell,
         )
 
     client_timeout = httpx.Timeout(float(timeout))
@@ -74,13 +77,14 @@ async def check(
             headers=_HEADERS,
         ) as client:
             return await _check_with_retry(
-                client, url, source_file, line, link_type, retries, max_redirects
+                client, url, source_file, line, link_type, retries, max_redirects, cell
             )
     except Exception as exc:
         return LinkResult(
             source_file=source_file, line=line, url=url,
             link_type=link_type, status=LinkStatus.ERROR,
             error=str(exc),
+            cell=cell,
         )
 
 
@@ -92,11 +96,12 @@ async def _check_with_retry(
     link_type: LinkType,
     retries: int,
     max_redirects: int,
+    cell: int | None = None,
 ) -> LinkResult:
     last_exc: Exception | None = None
     for attempt in range(retries + 1):
         try:
-            result = await _try_head(client, url, source_file, line, link_type)
+            result = await _try_head(client, url, source_file, line, link_type, cell)
             if result.http_code in _RETRY_ON and attempt < retries:
                 await asyncio.sleep(2 ** attempt)
                 continue
@@ -106,6 +111,7 @@ async def _check_with_retry(
                 source_file=source_file, line=line, url=url,
                 link_type=link_type, status=LinkStatus.TOO_MANY_REDIRECTS,
                 error=f"too many redirects (max {max_redirects})",
+                cell=cell,
             )
         except httpx.HTTPError as exc:
             last_exc = exc
@@ -116,6 +122,7 @@ async def _check_with_retry(
         source_file=source_file, line=line, url=url,
         link_type=link_type, status=LinkStatus.ERROR,
         error=str(last_exc),
+        cell=cell,
     )
 
 
@@ -125,6 +132,7 @@ async def _try_head(
     source_file: str,
     line: int,
     link_type: LinkType,
+    cell: int | None = None,
 ) -> LinkResult:
     try:
         resp = await client.head(url)
@@ -142,7 +150,7 @@ async def _try_head(
         resolved = str(resp.url)
         history = [str(r.url) for r in resp.history]
 
-    return _make_result(url, source_file, line, link_type, code, resolved, history)
+    return _make_result(url, source_file, line, link_type, code, resolved, history, cell)
 
 
 def _make_result(
@@ -153,6 +161,7 @@ def _make_result(
     code: int,
     resolved_url: str,
     history: list[str],
+    cell: int | None = None,
 ) -> LinkResult:
     # With follow_redirects=True, httpx resolves the full chain.
     # A redirect is detected when the final URL differs from the original.
@@ -175,6 +184,7 @@ def _make_result(
         http_code=code,
         resolved_url=resolved_url if was_redirected else None,
         redirect_chain=chain,
+        cell=cell,
     )
 
 

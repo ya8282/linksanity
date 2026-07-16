@@ -36,8 +36,8 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
     http_sem = asyncio.Semaphore(config.workers)
     pw_sem = asyncio.Semaphore(config.playwright_workers)
 
-    to_check: list[tuple[str, str, int, LinkType]] = []
-    for url, src, line, lt in queue.pending():
+    to_check: list[tuple[str, str, int, LinkType, int | None]] = []
+    for url, src, line, lt, cell in queue.pending():
         cached = cache.get(url) if cache and lt in _CACHEABLE else None
         if cached is not None:
             queue.record(
@@ -51,15 +51,16 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
                     resolved_url=cached.resolved_url,
                     error=cached.error,
                     redirect_chain=cached.redirect_chain,
+                    cell=cell,
                 )
             )
         else:
-            to_check.append((url, src, line, lt))
+            to_check.append((url, src, line, lt, cell))
 
     results = await asyncio.gather(
         *[
-            dispatch(url, src, line, lt, config, http_sem, pw_sem)
-            for url, src, line, lt in to_check
+            dispatch(url, src, line, lt, config, http_sem, pw_sem, cell=cell)
+            for url, src, line, lt, cell in to_check
         ]
     )
     for result in results:

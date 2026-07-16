@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<article xmlns="http://docbook.org/ns/docbook"
+         xmlns:xlink="http://www.w3.org/1999/xlink"
+         version="5.0">
+  <title>Sample DocBook Article</title>
+  <sect1 xml:id="intro">
+    <title>Introduction</title>
+    <para>
+      See the project homepage at
+      <ulink url="https://example.com/docs">the docs site</ulink>.
+    </para>
+    <para>
+      Also check the <link xlink:href="https://example.com/other">related page</link>.
+    </para>
+    <para>
+      For setup steps, see <xref linkend="setup-section"/>.
+    </para>
+  </sect1>
+  <sect1 id="setup-section">
+    <title>Setup</title>
+    <para>Setup instructions go here.</para>
+  </sect1>
+</article>

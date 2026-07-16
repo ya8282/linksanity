@@ -398,11 +398,10 @@ class TestNotebookCellWiring:
         assert results["missing-b.md"].status == LinkStatus.BROKEN
 
 
-class TestDocBookXrefDeferredResolution:
-    """<xref> correctness lands in Tasks 30/31 -- this documents the expected,
-    still-broken checkpoint behavior for Task 29 rather than a regression."""
+class TestDocBookXrefResolution:
+    """<xref> resolution against the corpus-wide id index (Task 31)."""
 
-    def test_xref_sentinel_is_not_yet_resolved(self, tmp_path: Path) -> None:
+    def test_xref_sentinel_resolves_to_ok(self, tmp_path: Path) -> None:
         content = """<?xml version="1.0"?>
 <article xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink">
   <title>Doc</title>
@@ -414,14 +413,11 @@ class TestDocBookXrefDeferredResolution:
         f.write_text(content)
         result = runner.invoke(app, ["scan", str(f)])
 
-        # Even though "setup-section" is a valid id in this same document, the
-        # corpus-wide ID index (Task 30) and the docbook-xref dispatch branch
-        # (Task 31) don't exist yet, so the "docbook-xref:setup-section"
-        # sentinel URL falls through to filesystem.check() and is treated as
-        # a broken relative path. This is the expected state at this
-        # checkpoint, not a bug introduced by this task.
-        assert result.exit_code == 1
-        assert "docbook-xref:setup-section" in result.output
+        # "setup-section" is a valid id in this same document, and the
+        # corpus-wide ID index (Task 30) plus the docbook-xref dispatch
+        # branch (Task 31) now resolve it, so the scan succeeds cleanly.
+        assert result.exit_code == 0
+        assert "docbook-xref:setup-section" not in result.output
 
 
 class TestDocBookCorpusWideIdPrescan:
@@ -431,17 +427,17 @@ class TestDocBookCorpusWideIdPrescan:
 
     DOCBOOK_BOOK_DIR = Path(__file__).parent.parent / "fixtures" / "docbook-book"
 
-    def test_xref_across_files_still_unresolved_at_this_checkpoint(self) -> None:
+    def test_xref_across_files_resolves_via_corpus_wide_index(self) -> None:
         # chapter-1.xml defines xml:id="install-step"; chapter-2.xml xrefs it.
-        # The corpus-wide id set is now correctly computed and threaded
-        # through dispatch()/filesystem.check() (Task 30), but filesystem.check()
-        # doesn't yet consume it to resolve docbook-xref: sentinels -- that's
-        # Task 31. So this must still report BROKEN, matching Task 29's
-        # locked-in behavior, not a regression or an early resolution.
+        # The corpus-wide id set is computed and threaded through
+        # dispatch()/filesystem.check() (Task 30), and filesystem.check()
+        # now consumes it to resolve docbook-xref: sentinels (Task 31), so
+        # the cross-file reference resolves cleanly even though the id and
+        # the xref referencing it live in different files.
         result = runner.invoke(app, ["scan", str(self.DOCBOOK_BOOK_DIR)])
 
-        assert result.exit_code == 1
-        assert "docbook-xref:install-step" in result.output
+        assert result.exit_code == 0
+        assert "docbook-xref:install-step" not in result.output
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

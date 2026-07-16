@@ -267,6 +267,65 @@ class TestCheckResultFields:
         assert result.url == "./missing.md"
 
 
+class TestDocbookXrefResolution:
+    """docbook-xref: sentinel resolution against the corpus-wide id index (Task 31)."""
+
+    def test_resolves_ok_when_id_in_corpus(self, tmp_path: Path) -> None:
+        src = tmp_path / "doc.xml"
+        src.write_text("<article/>")
+
+        result = check(
+            "docbook-xref:setup-section", str(src), 1, LinkType.INTERNAL,
+            docbook_ids={"setup-section", "other-id"},
+        )
+        assert result.status == LinkStatus.OK
+
+    def test_broken_when_id_not_in_corpus(self, tmp_path: Path) -> None:
+        src = tmp_path / "doc.xml"
+        src.write_text("<article/>")
+
+        result = check(
+            "docbook-xref:missing-section", str(src), 1, LinkType.INTERNAL,
+            docbook_ids={"setup-section"},
+        )
+        assert result.status == LinkStatus.BROKEN
+        assert result.error is not None
+        assert "missing-section" in result.error
+
+    def test_broken_when_docbook_ids_defaults_to_empty(self, tmp_path: Path) -> None:
+        src = tmp_path / "doc.xml"
+        src.write_text("<article/>")
+
+        result = check("docbook-xref:setup-section", str(src), 1, LinkType.INTERNAL)
+        assert result.status == LinkStatus.BROKEN
+
+    def test_plain_internal_link_unaffected_by_nonempty_docbook_ids(
+        self, tmp_path: Path
+    ) -> None:
+        src = tmp_path / "index.md"
+        target = tmp_path / "other.md"
+        src.write_text("# Index")
+        target.write_text("# Other")
+
+        result = check(
+            "./other.md", str(src), 1, LinkType.INTERNAL,
+            docbook_ids={"setup-section"},
+        )
+        assert result.status == LinkStatus.OK
+
+    def test_plain_internal_missing_link_unaffected_by_nonempty_docbook_ids(
+        self, tmp_path: Path
+    ) -> None:
+        src = tmp_path / "index.md"
+        src.write_text("# Index")
+
+        result = check(
+            "./missing.md", str(src), 1, LinkType.INTERNAL,
+            docbook_ids={"missing.md"},
+        )
+        assert result.status == LinkStatus.BROKEN
+
+
 class TestCheckCell:
     def test_cell_defaults_to_none(self, tmp_path: Path) -> None:
         src = tmp_path / "a.md"

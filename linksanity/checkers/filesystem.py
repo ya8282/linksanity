@@ -30,9 +30,31 @@ def check(
     directory-index links) against the source files on disk.
 
     docbook_ids is the corpus-wide set of DocBook id/xml:id values (see
-    scanner._collect_docbook_ids); it is accepted here for future use by
-    docbook-xref: sentinel resolution but is not yet consumed.
+    scanner._collect_docbook_ids), used to resolve docbook-xref: sentinel
+    URLs emitted by parsers.docbook.extract_links() against the full corpus
+    rather than as a file path.
     """
+    if url.startswith("docbook-xref:"):
+        target_id = url[len("docbook-xref:"):]
+        if target_id in docbook_ids:
+            return LinkResult(
+                source_file=source_file,
+                line=line,
+                url=url,
+                link_type=link_type,
+                status=LinkStatus.OK,
+                cell=cell,
+            )
+        return LinkResult(
+            source_file=source_file,
+            line=line,
+            url=url,
+            link_type=link_type,
+            status=LinkStatus.BROKEN,
+            error=f"DocBook xref target '{target_id}' not found in scanned corpus",
+            cell=cell,
+        )
+
     source_path = Path(source_file)
 
     # Split path and fragment

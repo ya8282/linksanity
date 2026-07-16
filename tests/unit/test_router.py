@@ -91,6 +91,50 @@ class TestDispatchFilesystem:
         assert result.status == LinkStatus.BROKEN
 
 
+# ── dispatch() — docbook_ids forwarding ──────────────────────────────────────
+
+class TestDispatchDocbookIds:
+    @pytest.fixture
+    def sems(self) -> tuple:
+        import asyncio
+        return asyncio.Semaphore(5), asyncio.Semaphore(2)
+
+    @pytest.mark.asyncio
+    async def test_docbook_ids_forwarded_and_resolves_ok(
+        self, tmp_path: Path, sems: tuple
+    ) -> None:
+        f = tmp_path / "doc.xml"
+        f.write_text("<article/>")
+        result = await dispatch(
+            "docbook-xref:setup-section", str(f), 1, LinkType.INTERNAL,
+            Config(), *sems, docbook_ids={"setup-section"},
+        )
+        assert result.status == LinkStatus.OK
+
+    @pytest.mark.asyncio
+    async def test_docbook_ids_forwarded_and_reports_broken(
+        self, tmp_path: Path, sems: tuple
+    ) -> None:
+        f = tmp_path / "doc.xml"
+        f.write_text("<article/>")
+        result = await dispatch(
+            "docbook-xref:missing-section", str(f), 1, LinkType.INTERNAL,
+            Config(), *sems, docbook_ids={"setup-section"},
+        )
+        assert result.status == LinkStatus.BROKEN
+
+    @pytest.mark.asyncio
+    async def test_docbook_ids_defaults_to_empty_and_reports_broken(
+        self, tmp_path: Path, sems: tuple
+    ) -> None:
+        f = tmp_path / "doc.xml"
+        f.write_text("<article/>")
+        result = await dispatch(
+            "docbook-xref:setup-section", str(f), 1, LinkType.INTERNAL, Config(), *sems
+        )
+        assert result.status == LinkStatus.BROKEN
+
+
 # ── dispatch() — HTTP routes ──────────────────────────────────────────────────
 
 class TestDispatchHTTP:

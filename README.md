@@ -18,7 +18,7 @@ ok=38   broken=1   redirect=1   skipped=0
 
 ## Features
 
-- **Static scan** — parse `.md`, `.rst`, and `.html` source files without a browser
+- **Static scan** — parse 8 file formats (see Supported formats below) without a browser
 - **Live crawl** — follow links on a deployed site using a headless browser (Playwright)
 - **Exit codes** — `0` = clean, `1` = broken links found (ideal for CI)
 - **Multiple formats** — console (Rich), JSON, CSV; optional Markdown summary report
@@ -27,6 +27,19 @@ ok=38   broken=1   redirect=1   skipped=0
 - **Ignore domains** — skip domains you don't control
 - **JS-rendered pages** — route specific domains through Playwright in scan mode
 - **Retry logic** — exponential back-off on 429/503; HEAD→GET fallback on 405
+
+## Supported formats
+
+linksanity checks links in 8 file formats:
+
+- **Markdown** — `.md` files
+- **reStructuredText** — `.rst` files
+- **HTML** — `.html`, `.htm` files
+- **AsciiDoc** — `.adoc`, `.asciidoc` files
+- **MDX** — `.mdx` files (CommonMark + JSX)
+- **Jupyter Notebooks** — `.ipynb` files (extracts markdown cells)
+- **MyST-flavored Markdown** — `.md` files with opt-in `--myst` flag or `myst = true` in config (enables MyST role extraction: `{doc}`, `{ref}`)
+- **DocBook** — `.xml`, `.dbk` files (extracts link and xref elements)
 
 ## Install
 
@@ -357,6 +370,7 @@ workers = 10
 timeout = 15
 retry = 3
 check_anchors = false
+myst = true
 max_pages = 200
 block_analytics = true
 

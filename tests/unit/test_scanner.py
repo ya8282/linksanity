@@ -11,7 +11,10 @@ import pytest
 
 from linksanity.config import Config
 from linksanity.queue import LinkResult, LinkStatus, LinkType
-from linksanity.scanner import run_scan
+from linksanity.scanner import _collect_docbook_ids, run_scan
+
+FIXTURES = Path(__file__).parent.parent / "fixtures"
+DOCBOOK_BOOK_DIR = FIXTURES / "docbook-book"
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -161,3 +164,54 @@ class TestIncremental:
 
         assert mock_dispatch.await_count == 1
         assert "could not diff" in capsys.readouterr().err
+
+
+class TestDocbookIdPrescan:
+    """_collect_docbook_ids() -- corpus-wide (not per-file) DocBook id collection."""
+
+    def test_merges_ids_across_multiple_files(self) -> None:
+        # chapter-1.xml defines id="install-step"; chapter-2.xml only xrefs it.
+        # A corpus-wide walk over both files must surface the id regardless of
+        # which file it's collected from.
+        paths = [DOCBOOK_BOOK_DIR / "chapter-1.xml", DOCBOOK_BOOK_DIR / "chapter-2.xml"]
+
+        ids = _collect_docbook_ids(paths)
+
+        assert "install-step" in ids
+
+    def test_skipped_when_no_docbook_files(self, tmp_path: Path) -> None:
+        doc = tmp_path / "index.md"
+        doc.write_text("# Just markdown\n")
+
+        with patch("linksanity.scanner.docbook.extract_ids") as mock_extract_ids:
+            ids = _collect_docbook_ids([doc])
+
+        mock_extract_ids.assert_not_called()
+        assert ids == set()
+
+    def test_dbk_suffix_is_included(self, tmp_path: Path) -> None:
+        f = tmp_path / "chapter.dbk"
+        f.write_text(
+            '<?xml version="1.0"?>\n'
+            '<chapter xmlns="http://docbook.org/ns/docbook">'
+            '<title>T</title><sect1 id="dbk-id"><title>S</title></sect1>'
+            "</chapter>\n"
+        )
+
+        ids = _collect_docbook_ids([f])
+
+        assert "dbk-id" in ids
+
+    @pytest.mark.asyncio
+    async def test_run_scan_passes_docbook_ids_to_dispatch(self, tmp_path: Path) -> None:
+        config = Config()
+
+        with patch("linksanity.scanner.dispatch", new=_mock_dispatch()) as mock_dispatch:
+            await run_scan(
+                [str(DOCBOOK_BOOK_DIR / "chapter-1.xml"), str(DOCBOOK_BOOK_DIR / "chapter-2.xml")],
+                config,
+            )
+
+        assert mock_dispatch.await_count == 1
+        _, kwargs = mock_dispatch.await_args
+        assert kwargs["docbook_ids"] == {"install-step"}

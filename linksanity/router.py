@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Set as AbstractSet
 from urllib.parse import urlparse
 
 from linksanity.checkers import filesystem, http
@@ -46,6 +47,7 @@ async def dispatch(
     pw_sem: asyncio.Semaphore,
     *,
     cell: int | None = None,
+    docbook_ids: AbstractSet[str] = frozenset(),
 ) -> LinkResult:
     """Route a link to the correct checker and return its result."""
     if link_type == LinkType.NON_HTTP_SCHEME:
@@ -62,6 +64,7 @@ async def dispatch(
             check_anchors=config.check_anchors,
             link_style=config.link_style,
             cell=cell,
+            docbook_ids=docbook_ids,
         )
 
     if config.skip_urls and url_is_skipped(url, config.skip_urls):

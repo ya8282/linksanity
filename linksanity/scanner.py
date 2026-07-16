@@ -29,6 +29,8 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
     if config.incremental:
         paths = _filter_changed(paths, config, cache)
 
+    docbook_ids = _collect_docbook_ids(paths)
+
     for path in paths:
         if path.suffix.lower() == ".ipynb":
             notebook.extract_links(path, queue)
@@ -63,7 +65,10 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
 
     results = await asyncio.gather(
         *[
-            dispatch(url, src, line, lt, config, http_sem, pw_sem, cell=cell)
+            dispatch(
+                url, src, line, lt, config, http_sem, pw_sem,
+                cell=cell, docbook_ids=docbook_ids,
+            )
             for url, src, line, lt, cell in to_check
         ]
     )
@@ -97,6 +102,24 @@ def _filter_changed(paths: list[Path], config: Config, cache: Cache | None) -> l
         return paths
 
     return [p for p in paths if p.resolve() in changed]
+
+
+def _collect_docbook_ids(paths: list[Path]) -> set[str]:
+    """Walk every .xml/.dbk file once, merging all ids into one corpus-wide set.
+
+    DocBook's <xref linkend="foo"> can point to an id defined in a different
+    file than the one containing the xref (books are commonly split across
+    files via XInclude), so this is a single global namespace with no
+    per-file keying -- matching DocBook's own linkend semantics.
+
+    Skips the walk entirely (never calls docbook.extract_ids) when no
+    .xml/.dbk files are present, so non-DocBook repos pay zero overhead.
+    """
+    docbook_ids: set[str] = set()
+    for path in paths:
+        if path.suffix.lower() in (".xml", ".dbk"):
+            docbook_ids |= docbook.extract_ids(path)
+    return docbook_ids
 
 
 def _expand_paths(patterns: list[str]) -> list[Path]:

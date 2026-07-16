@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Set as AbstractSet
 from pathlib import Path
 
 from linksanity.queue import LinkResult, LinkStatus, LinkType
@@ -17,6 +18,7 @@ def check(
     check_anchors: bool = False,
     link_style: str | None = None,
     cell: int | None = None,
+    docbook_ids: AbstractSet[str] = frozenset(),
 ) -> LinkResult:
     """Resolve and validate an internal or anchor link.
 
@@ -26,6 +28,10 @@ def check(
     If the direct path doesn't exist and link_style is set (mkdocs, docusaurus,
     sphinx), also tries that SSG's built-URL conventions (extensionless links,
     directory-index links) against the source files on disk.
+
+    docbook_ids is the corpus-wide set of DocBook id/xml:id values (see
+    scanner._collect_docbook_ids); it is accepted here for future use by
+    docbook-xref: sentinel resolution but is not yet consumed.
     """
     source_path = Path(source_file)
 

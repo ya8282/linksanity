@@ -424,6 +424,26 @@ class TestDocBookXrefDeferredResolution:
         assert "docbook-xref:setup-section" in result.output
 
 
+class TestDocBookCorpusWideIdPrescan:
+    """Task 30: pre-scan walks every .xml/.dbk file in the scan target once,
+    merging ids into a corpus-wide set -- proven here with a two-file fixture
+    where the id and the xref referencing it live in different files."""
+
+    DOCBOOK_BOOK_DIR = Path(__file__).parent.parent / "fixtures" / "docbook-book"
+
+    def test_xref_across_files_still_unresolved_at_this_checkpoint(self) -> None:
+        # chapter-1.xml defines xml:id="install-step"; chapter-2.xml xrefs it.
+        # The corpus-wide id set is now correctly computed and threaded
+        # through dispatch()/filesystem.check() (Task 30), but filesystem.check()
+        # doesn't yet consume it to resolve docbook-xref: sentinels -- that's
+        # Task 31. So this must still report BROKEN, matching Task 29's
+        # locked-in behavior, not a regression or an early resolution.
+        result = runner.invoke(app, ["scan", str(self.DOCBOOK_BOOK_DIR)])
+
+        assert result.exit_code == 1
+        assert "docbook-xref:install-step" in result.output
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _write_domains(tmp_path: Path, domains: list[str]) -> Path:

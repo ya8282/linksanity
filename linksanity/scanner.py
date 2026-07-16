@@ -44,7 +44,7 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
 
     to_check: list[tuple[str, str, int, LinkType, int | None]] = []
     for url, src, line, lt, cell in queue.pending():
-        cached = cache.get(url) if cache and lt in _CACHEABLE else None
+        cached = cache.get(url) if cache and not config.offline and lt in _CACHEABLE else None
         if cached is not None:
             queue.record(
                 LinkResult(
@@ -74,7 +74,7 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
     )
     for result in results:
         queue.record(result)
-        if cache and result.link_type in _CACHEABLE:
+        if cache and not config.offline and result.link_type in _CACHEABLE:
             cache.put(result)
 
     if cache:

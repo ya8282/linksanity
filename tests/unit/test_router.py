@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import respx
 
 from linksanity.config import Config
 from linksanity.queue import LinkResult, LinkStatus, LinkType
@@ -209,6 +210,80 @@ class TestDispatchHTTP:
             "https://example.com/login", "f", 1, LinkType.EXTERNAL, config, *sems
         )
         assert result.status == LinkStatus.SKIPPED
+
+
+# ── dispatch() — offline mode ─────────────────────────────────────────────────
+
+class TestDispatchOffline:
+    @pytest.fixture
+    def sems(self) -> tuple:
+        import asyncio
+        return asyncio.Semaphore(5), asyncio.Semaphore(2)
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_external_short_circuits_with_zero_requests(self, sems: tuple) -> None:
+        route = respx.head("https://example.com/page")
+        config = Config(offline=True)
+        result = await dispatch(
+            "https://example.com/page", "f", 1, LinkType.EXTERNAL, config, *sems
+        )
+        assert result.status == LinkStatus.SKIPPED
+        assert result.error == "skipped: --offline"
+        assert route.call_count == 0
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_external_anchor_short_circuits_with_zero_requests(self, sems: tuple) -> None:
+        route = respx.head("https://example.com/page")
+        config = Config(offline=True)
+        result = await dispatch(
+            "https://example.com/page#section", "f", 1,
+            LinkType.EXTERNAL_ANCHOR, config, *sems,
+        )
+        assert result.status == LinkStatus.SKIPPED
+        assert result.error == "skipped: --offline"
+        assert route.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_internal_unaffected_by_offline(
+        self, tmp_path: Path, sems: tuple
+    ) -> None:
+        source = tmp_path / "index.md"
+        source.write_text("[link](other.md)\n")
+        (tmp_path / "other.md").write_text("# Other\n")
+        config = Config(offline=True)
+        result = await dispatch(
+            "other.md", str(source), 1, LinkType.INTERNAL, config, *sems
+        )
+        assert result.status == LinkStatus.OK
+
+    @pytest.mark.asyncio
+    async def test_anchor_unaffected_by_offline(
+        self, tmp_path: Path, sems: tuple
+    ) -> None:
+        f = tmp_path / "page.md"
+        f.write_text("# Hello\n")
+        config = Config(offline=True)
+        result = await dispatch(
+            "#hello", str(f), 1, LinkType.ANCHOR, config, *sems
+        )
+        assert result.status == LinkStatus.OK
+
+    @pytest.mark.asyncio
+    async def test_offline_false_still_dispatches_to_http(self, sems: tuple) -> None:
+        config = Config(offline=False, timeout=5, retry=0)
+        ok_result = LinkResult(
+            source_file="f", line=1, url="https://example.com",
+            link_type=LinkType.EXTERNAL, status=LinkStatus.OK,
+        )
+        with patch(
+            "linksanity.router.http.check", new_callable=AsyncMock, return_value=ok_result
+        ):
+            result = await dispatch(
+                "https://example.com", "f", 1, LinkType.EXTERNAL, config, *sems
+            )
+        assert result.status == LinkStatus.OK
 
 
 # ── dispatch() — non-HTTP schemes ─────────────────────────────────────────────

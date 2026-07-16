@@ -108,6 +108,10 @@ def scan(
         "--annotations/--no-annotations",
         help="Emit GitHub Actions ::error/::warning annotations (default: auto-detect CI)",
     ),
+    offline: bool = typer.Option(
+        False,
+        help="Skip external HTTP checks (reported as SKIPPED); does not read or write the cache for them",
+    ),
 ) -> None:
     """Scan local documentation files for broken links."""
     overrides: dict[str, object] = {}
@@ -137,6 +141,8 @@ def scan(
         overrides["baseline"] = baseline
     if annotations is not None:
         overrides["annotations"] = annotations
+    if offline:
+        overrides["offline"] = True
     if link_style:
         if link_style not in ("mkdocs", "docusaurus", "sphinx"):
             typer.echo(

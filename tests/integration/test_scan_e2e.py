@@ -223,6 +223,30 @@ class TestScanHTTPEdgeCases:
         assert result.exit_code == 0, result.output
 
 
+# ── --offline flag (Task 37) ────────────────────────────────────────────────
+
+class TestScanOfflineFlag:
+    @respx.mock
+    def test_offline_skips_external_link_with_zero_requests(self, tmp_path: Path) -> None:
+        route = respx.head("https://example.com/page")
+        f = tmp_path / "a.md"
+        f.write_text("[link](https://example.com/page)\n")
+        result = runner.invoke(app, ["scan", str(f), "--offline"])
+        assert result.exit_code == 0, result.output
+        assert "skipped=1" in result.output
+        assert route.call_count == 0
+
+    def test_offline_flag_present_in_scan_help(self) -> None:
+        result = runner.invoke(app, ["scan", "--help"])
+        assert result.exit_code == 0
+        assert "--offline" in result.output
+
+    def test_offline_flag_absent_from_crawl_help(self) -> None:
+        result = runner.invoke(app, ["crawl", "--help"])
+        assert result.exit_code == 0
+        assert "--offline" not in result.output
+
+
 # ── Baseline diffing ──────────────────────────────────────────────────────────
 
 class TestScanBaseline:

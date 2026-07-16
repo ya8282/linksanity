@@ -35,6 +35,7 @@ class Config:
     since: str | None = None
     baseline: str | None = None
     annotations: bool | None = None
+    offline: bool = False
 
 
 def url_is_skipped(url: str, patterns: set[str]) -> bool:
@@ -119,6 +120,7 @@ def load_config(
         since=_str(data, "since", "") or None,
         baseline=_str(data, "baseline", "") or None,
         annotations=_bool_or_none(data, "annotations"),
+        offline=_bool(data, "offline", Config.offline),
     )
 
     # CLI overrides replace file values when explicitly provided

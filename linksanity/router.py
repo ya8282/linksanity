@@ -67,6 +67,14 @@ async def dispatch(
             docbook_ids=docbook_ids,
         )
 
+    if config.offline:
+        return LinkResult(
+            source_file=source_file, line=line, url=url,
+            link_type=link_type, status=LinkStatus.SKIPPED,
+            error="skipped: --offline",
+            cell=cell,
+        )
+
     if config.skip_urls and url_is_skipped(url, config.skip_urls):
         return LinkResult(
             source_file=source_file, line=line, url=url,

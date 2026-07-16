@@ -145,6 +145,34 @@ class TestAnnotationsField:
         assert cfg.annotations is False
 
 
+class TestOfflineField:
+    def test_defaults_to_false(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "none.toml")
+        assert cfg.offline is False
+
+    def test_toml_true(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("offline = true\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.offline is True
+
+    def test_toml_absent_stays_false(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = 3\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.offline is False
+
+    def test_override_true(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "none.toml", offline=True)
+        assert cfg.offline is True
+
+    def test_none_override_does_not_replace_toml_value(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("offline = true\n")
+        cfg = load_config(toml_path=p, offline=None)
+        assert cfg.offline is True
+
+
 class TestUrlIsSkipped:
     def test_exact_url_match(self) -> None:
         patterns = {"https://example.com/login", "https://example.com/admin"}

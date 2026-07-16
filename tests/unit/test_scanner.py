@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import respx
 
 from linksanity.config import Config
 from linksanity.queue import LinkResult, LinkStatus, LinkType
@@ -100,6 +101,62 @@ class TestCacheIntegration:
 
         data = json.loads(cache_file.read_text())
         assert data["urls"] == {}
+
+
+class TestOfflineCacheBypass:
+    """Task 37: --offline must neither read nor write the cache for the
+    external links it short-circuits (router.dispatch returns SKIPPED for
+    these, but scanner.py's own read/write gates are what actually keep the
+    cache untouched)."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_offline_ignores_warm_cache_entry(self, tmp_path: Path) -> None:
+        doc = tmp_path / "index.md"
+        doc.write_text("[link](https://example.com)\n")
+        cache_file = tmp_path / "cache.json"
+        cache_file.write_text(json.dumps({
+            "urls": {
+                "https://example.com": {
+                    "source_file": str(doc), "line": 1, "link_type": "external",
+                    "status": "ok", "http_code": 200, "resolved_url": None,
+                    "error": None, "redirect_chain": None,
+                    "checked_at": 9999999999,
+                }
+            },
+            "last_commit": None,
+        }))
+        config = Config(cache_file=str(cache_file), offline=True)
+
+        queue = await run_scan([str(doc)], config)
+
+        result = queue.results()[0]
+        assert result.status == LinkStatus.SKIPPED
+        assert result.error == "skipped: --offline"
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_offline_does_not_write_cache(self, tmp_path: Path) -> None:
+        doc = tmp_path / "index.md"
+        doc.write_text("[link](https://example.com)\n")
+        cache_file = tmp_path / "cache.json"
+        config = Config(cache_file=str(cache_file), offline=True)
+
+        await run_scan([str(doc)], config)
+
+        data = json.loads(cache_file.read_text())
+        assert data["urls"] == {}
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_offline_fires_zero_http_requests(self, tmp_path: Path) -> None:
+        doc = tmp_path / "index.md"
+        doc.write_text("[link](https://example.com)\n[link2](https://other.com/x)\n")
+        config = Config(offline=True)
+
+        queue = await run_scan([str(doc)], config)
+
+        assert {r.status for r in queue.results()} == {LinkStatus.SKIPPED}
 
 
 class TestIncremental:

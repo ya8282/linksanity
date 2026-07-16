@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 import typer
@@ -17,6 +18,20 @@ app = typer.Typer(
     help="Detect broken links in Markdown, reStructuredText, and HTML documentation.",
     no_args_is_help=True,
 )
+
+
+def _annotations_enabled(config: Config) -> bool:
+    if config.annotations is not None:          # explicit --annotations/--no-annotations
+        return config.annotations
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return False
+    # Assumption 6: never corrupt bare-stdout structured output
+    return not (config.format in ("json", "csv") and not config.output)
+
+
+def _run_annotations_reporter(results: list[LinkResult]) -> None:
+    from linksanity.reporters.github_annotations import report as annotations_report  # noqa: I001
+    annotations_report(results)
 
 
 def _read_domains(path: str | None) -> set[str]:
@@ -88,6 +103,11 @@ def scan(
     baseline: str | None = typer.Option(
         None, help="Previous JSON report to diff against; only new breakage is reported"
     ),
+    annotations: bool | None = typer.Option(
+        None,
+        "--annotations/--no-annotations",
+        help="Emit GitHub Actions ::error/::warning annotations (default: auto-detect CI)",
+    ),
 ) -> None:
     """Scan local documentation files for broken links."""
     overrides: dict[str, object] = {}
@@ -115,6 +135,8 @@ def scan(
         overrides["since"] = since
     if baseline:
         overrides["baseline"] = baseline
+    if annotations is not None:
+        overrides["annotations"] = annotations
     if link_style:
         if link_style not in ("mkdocs", "docusaurus", "sphinx"):
             typer.echo(
@@ -185,6 +207,9 @@ def scan(
     if config.github_issue:
         _run_github_reporter(results, config)
 
+    if _annotations_enabled(config):
+        _run_annotations_reporter(results)
+
     broken = sum(1 for r in results if r.status in (LinkStatus.BROKEN, LinkStatus.ERROR))
     raise typer.Exit(1 if broken else 0)
 
@@ -229,6 +254,11 @@ def crawl(
     max_redirects: int | None = typer.Option(
         None, help="Max redirect hops before flagging as too-many-redirects"
     ),
+    annotations: bool | None = typer.Option(
+        None,
+        "--annotations/--no-annotations",
+        help="Emit GitHub Actions ::error/::warning annotations (default: auto-detect CI)",
+    ),
 ) -> None:
     """Crawl a live site and check all links."""
     try:
@@ -264,6 +294,8 @@ def crawl(
         overrides["github_repo"] = repo
     if max_redirects is not None:
         overrides["max_redirects"] = max_redirects
+    if annotations is not None:
+        overrides["annotations"] = annotations
     overrides["format"] = format
 
     ignore_set = _read_domains(ignore_domains)
@@ -312,6 +344,9 @@ def crawl(
 
     if config.github_issue:
         _run_github_reporter(results, config)
+
+    if _annotations_enabled(config):
+        _run_annotations_reporter(results)
 
     summary = queue.summary()
     broken = summary.get("broken", 0) + summary.get("error", 0)

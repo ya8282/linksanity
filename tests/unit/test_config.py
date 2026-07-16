@@ -101,6 +101,50 @@ class TestBlockAnalytics:
         assert cfg.block_analytics is True
 
 
+class TestAnnotationsField:
+    def test_defaults_to_none(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "none.toml")
+        assert cfg.annotations is None
+
+    def test_toml_true(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("annotations = true\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.annotations is True
+
+    def test_toml_false(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("annotations = false\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.annotations is False
+
+    def test_toml_absent_stays_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = 3\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.annotations is None
+
+    def test_override_true(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "none.toml", annotations=True)
+        assert cfg.annotations is True
+
+    def test_override_false(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "none.toml", annotations=False)
+        assert cfg.annotations is False
+
+    def test_none_override_does_not_replace_toml_value(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("annotations = true\n")
+        cfg = load_config(toml_path=p, annotations=None)
+        assert cfg.annotations is True
+
+    def test_override_replaces_toml_value(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("annotations = true\n")
+        cfg = load_config(toml_path=p, annotations=False)
+        assert cfg.annotations is False
+
+
 class TestUrlIsSkipped:
     def test_exact_url_match(self) -> None:
         patterns = {"https://example.com/login", "https://example.com/admin"}

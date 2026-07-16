@@ -34,6 +34,7 @@ class Config:
     incremental: bool = False
     since: str | None = None
     baseline: str | None = None
+    annotations: bool | None = None
 
 
 def url_is_skipped(url: str, patterns: set[str]) -> bool:
@@ -66,6 +67,11 @@ def _bool(data: dict[str, object], key: str, default: bool) -> bool:
 def _str(data: dict[str, object], key: str, default: str) -> str:
     v = data.get(key, default)
     return str(v) if isinstance(v, str) else default
+
+
+def _bool_or_none(data: dict[str, object], key: str) -> bool | None:
+    v = data.get(key)
+    return bool(v) if isinstance(v, (bool, int)) else None
 
 
 def load_config(
@@ -112,6 +118,7 @@ def load_config(
         incremental=_bool(data, "incremental", Config.incremental),
         since=_str(data, "since", "") or None,
         baseline=_str(data, "baseline", "") or None,
+        annotations=_bool_or_none(data, "annotations"),
     )
 
     # CLI overrides replace file values when explicitly provided

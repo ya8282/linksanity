@@ -437,6 +437,8 @@ skip_urls = [
 
 ## Development
 
+Clone the [repository](https://github.com/ya8282/linksanity) and set up a dev environment:
+
 ```bash
 git clone https://github.com/ya8282/linksanity
 cd linksanity

@@ -19,6 +19,12 @@ from linksanity.parsers.markdown import parse_markdown_string
 # href={someVar} never match -- they're skipped, not guessed at.
 _JSX_HREF = re.compile(r'''\b(?:href|to)=["']([^"'{}]+)["']''')
 
+# A fenced code block opens/closes on a line consisting of (up to 3 leading
+# spaces, per CommonMark) three-or-more backticks or tildes. Closing the
+# same fence requires the same character and at least as many repeats as
+# the opener -- matching how markdown-it-py (and CommonMark) resolve fences.
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
 
 def extract_links(path: Path) -> list[tuple[str, int]]:
     """Return (url, line) pairs extracted from an MDX file.
@@ -41,7 +47,27 @@ def extract_links(path: Path) -> list[tuple[str, int]]:
         return []
 
     seen = set(results)
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
     for lineno, line in enumerate(content.splitlines(), start=1):
+        fence_match = _FENCE_RE.match(line)
+
+        if in_fence:
+            if (
+                fence_match
+                and fence_match.group(1)[0] == fence_char
+                and len(fence_match.group(1)) >= fence_len
+            ):
+                in_fence = False
+            continue
+
+        if fence_match:
+            in_fence = True
+            fence_char = fence_match.group(1)[0]
+            fence_len = len(fence_match.group(1))
+            continue
+
         for url in _JSX_HREF.findall(line):
             pair = (url, lineno)
             if pair not in seen:

@@ -92,3 +92,16 @@ class TestExtractLinks:
         pairs = extract_links(f)
         assert ("https://md.example.com", 1) in pairs
         assert ("https://jsx.example.com", 2) in pairs
+
+    def test_skips_jsx_href_inside_fenced_code_block(self) -> None:
+        # sample.mdx has a ```jsx fence showing <Link href="/fenced-example">
+        # as a usage example -- that's a code sample, not a real link, and
+        # must not be extracted even though the raw text matches _JSX_HREF.
+        urls = [url for url, _ in extract_links(SAMPLE)]
+        assert "/fenced-example" not in urls
+
+    def test_extracts_jsx_href_after_fenced_code_block(self) -> None:
+        # A real JSX href appearing after the fence closes must still be
+        # extracted -- proves the fence-tracking state resets on close.
+        pairs = extract_links(SAMPLE)
+        assert ("/after-fence", 21) in pairs

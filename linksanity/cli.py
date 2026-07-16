@@ -44,6 +44,9 @@ def scan(
     check_images: bool = typer.Option(
         False, help="Also validate <img src> / ![]() image targets, not just links"
     ),
+    myst: bool = typer.Option(
+        False, help="Also extract MyST {doc}/{ref} role targets from .md files"
+    ),
     link_style: str | None = typer.Option(
         None, help="Relative-link resolution preset for built docs sites: mkdocs, docusaurus, sphinx"
     ),
@@ -98,6 +101,8 @@ def scan(
         overrides["check_anchors"] = True
     if check_images:
         overrides["check_images"] = True
+    if myst:
+        overrides["myst"] = True
     if max_redirects is not None:
         overrides["max_redirects"] = max_redirects
     if cache:

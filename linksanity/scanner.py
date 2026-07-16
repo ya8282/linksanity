@@ -11,6 +11,7 @@ from linksanity import git_utils
 from linksanity.cache import Cache
 from linksanity.config import Config
 from linksanity.parsers import html, markdown, rst
+from linksanity.parsers import myst as myst_parser
 from linksanity.queue import LinkQueue, LinkResult, LinkType
 from linksanity.router import classify, dispatch
 
@@ -29,7 +30,7 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
         paths = _filter_changed(paths, config, cache)
 
     for path in paths:
-        for url, line in _parse(path, config.check_images):
+        for url, line in _parse(path, config.check_images, config.myst):
             link_type = classify(url)
             queue.add(url, str(path), line, link_type)
 
@@ -125,10 +126,13 @@ def _expand_paths(patterns: list[str]) -> list[Path]:
     return result
 
 
-def _parse(path: Path, check_images: bool) -> list[tuple[str, int]]:
+def _parse(path: Path, check_images: bool, myst: bool = False) -> list[tuple[str, int]]:
     suffix = path.suffix.lower()
     if suffix == ".md":
-        return markdown.extract_links(path, include_images=check_images)
+        links = markdown.extract_links(path, include_images=check_images)
+        if myst:
+            links = links + myst_parser.extract_links(path)
+        return links
     if suffix == ".rst":
         return rst.extract_links(path, include_images=check_images)
     if suffix in (".html", ".htm"):

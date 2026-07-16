@@ -16,6 +16,7 @@ class Config:
     retry: int = 2
     check_anchors: bool = False
     check_images: bool = False
+    myst: bool = False
     link_style: str | None = None
     max_pages: int = 500
     ignore_domains: set[str] = field(default_factory=set)
@@ -97,6 +98,7 @@ def load_config(
         retry=_int(data, "retry", Config.retry),
         check_anchors=_bool(data, "check_anchors", Config.check_anchors),
         check_images=_bool(data, "check_images", Config.check_images),
+        myst=_bool(data, "myst", Config.myst),
         link_style=_str(data, "link_style", "") or None,
         max_pages=_int(data, "max_pages", Config.max_pages),
         ignore_domains=_domain_set("ignore_domains"),

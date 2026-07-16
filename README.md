@@ -413,7 +413,7 @@ skip_urls = [
 ## Development
 
 ```bash
-git clone https://github.com/linksanity/linksanity
+git clone https://github.com/ya8282/linksanity
 cd linksanity
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,browser]"

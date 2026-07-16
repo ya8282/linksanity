@@ -464,6 +464,23 @@ class TestDocBookXrefResolution:
         assert result.exit_code == 0
         assert "docbook-xref:setup-section" not in result.output
 
+    def test_xref_sentinel_resolves_to_broken(self, tmp_path: Path) -> None:
+        content = """<?xml version="1.0"?>
+<article xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <title>Doc</title>
+  <sect1><title>S</title><para>See <xref linkend="does-not-exist"/>.</para></sect1>
+</article>
+"""
+        f = tmp_path / "doc.xml"
+        f.write_text(content)
+        result = runner.invoke(app, ["scan", str(f)])
+
+        # No id "does-not-exist" anywhere in the corpus, so this must be
+        # reported BROKEN (exit 1), not silently SKIPPED — guards against
+        # classify() ever mis-routing the docbook-xref: sentinel scheme.
+        assert result.exit_code == 1
+        assert "docbook-xref:does-not-exist" in result.output
+
 
 class TestDocBookCorpusWideIdPrescan:
     """Task 30: pre-scan walks every .xml/.dbk file in the scan target once,

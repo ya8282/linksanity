@@ -366,6 +366,51 @@ class TestScanNewFormatsDirectoryMode:
             assert missing in result.output, f"{missing} not found in scan output"
 
 
+class TestScanAllEightFormatsCombined:
+    """DoD checkpoint: 'All 8 formats (md, rst, html + 5 new) scan correctly
+    in one combined run.' TestScanNewFormatsDirectoryMode above proves the 5
+    new formats work together, but never in the same run as the 3 original
+    formats (md, rst, html) -- this test closes that gap by scanning a
+    single directory containing all 8 at once, each with one deliberately
+    broken internal link, and asserting every one is picked up."""
+
+    def test_all_eight_formats_scanned_in_one_run(self, tmp_path: Path) -> None:
+        (tmp_path / "a.md").write_text("[broken](missing-md.md)\n")
+        (tmp_path / "b.rst").write_text("A `broken link <missing-rst.md>`_.\n")
+        (tmp_path / "c.html").write_text(
+            '<html><body><a href="missing-html.md">x</a></body></html>\n'
+        )
+        (tmp_path / "d.adoc").write_text("link:missing-adoc.md[Missing].\n")
+        (tmp_path / "e.mdx").write_text(
+            '[broken](missing-mdx.md)\n\n<a href="also-missing-mdx.md">x</a>\n'
+        )
+        (tmp_path / "f.ipynb").write_text(
+            json.dumps(
+                {"cells": [{"cell_type": "markdown", "source": "[x](missing-ipynb.md)\n"}]}
+            )
+        )
+        (tmp_path / "g.xml").write_text(_DOCBOOK_XML.format(target="missing-xml.md"))
+        (tmp_path / "h-myst.md").write_text(
+            "See {doc}`missing-myst-target` for setup.\n"
+        )
+
+        result = runner.invoke(app, ["scan", str(tmp_path), "--myst"])
+
+        assert result.exit_code == 1
+        for missing in (
+            "missing-md.md",
+            "missing-rst.md",
+            "missing-html.md",
+            "missing-adoc.md",
+            "missing-mdx.md",
+            "also-missing-mdx.md",
+            "missing-ipynb.md",
+            "missing-xml.md",
+            "missing-myst-target",
+        ):
+            assert missing in result.output, f"{missing} not found in scan output"
+
+
 class TestNotebookCellWiring:
     """.ipynb goes through run_scan's direct queue.add(cell=...) path, not _parse()."""
 

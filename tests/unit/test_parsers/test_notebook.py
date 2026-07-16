@@ -3,7 +3,9 @@
 import json
 import warnings
 from pathlib import Path
+from unittest.mock import patch
 
+from linksanity.parsers.markdown import parse_markdown_string
 from linksanity.parsers.notebook import extract_links
 from linksanity.queue import LinkQueue
 
@@ -144,3 +146,73 @@ class TestExtractLinks:
         extract_links(f, queue)
         pending = _pending_by_url(queue)
         assert "https://after-malformed.example.com" in pending
+
+    def test_source_field_wrong_type_skips_cell_not_whole_notebook(
+        self, tmp_path: Path
+    ) -> None:
+        # A markdown cell whose "source" is neither a list nor a str (e.g. a
+        # malformed int or null) is skipped via the `else: continue` branch,
+        # while later valid cells still get scanned.
+        notebook = {
+            "cells": [
+                {"cell_type": "markdown", "source": 123},
+                {"cell_type": "markdown", "source": None},
+                {
+                    "cell_type": "markdown",
+                    "source": "[ok](https://after-bad-source.example.com)\n",
+                },
+            ],
+        }
+        f = tmp_path / "bad_source_type.ipynb"
+        f.write_text(json.dumps(notebook))
+        queue = LinkQueue()
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            extract_links(f, queue)
+        pending = _pending_by_url(queue)
+        assert "https://after-bad-source.example.com" in pending
+        assert len(pending) == 1
+        assert len(w) == 0  # skipping a malformed source is silent, not a warning
+
+    def test_per_cell_parse_error_skips_only_that_cell(self, tmp_path: Path) -> None:
+        # parse_markdown_string() raising for one cell must not abort the
+        # whole notebook -- forced via a mock, since real markdown content
+        # is unlikely to trigger this defensive `except Exception` branch
+        # naturally.
+        notebook = {
+            "cells": [
+                {
+                    "cell_type": "markdown",
+                    "source": "[first](https://first.example.com)\n",
+                },
+                {
+                    "cell_type": "markdown",
+                    "source": "[second](https://second.example.com)\n",
+                },
+            ],
+        }
+        f = tmp_path / "per_cell_error.ipynb"
+        f.write_text(json.dumps(notebook))
+        queue = LinkQueue()
+
+        def _fail_on_first_cell(content: str) -> list[tuple[str, int]]:
+            if "first" in content:
+                raise RuntimeError("boom")
+            return parse_markdown_string(content)
+
+        with (
+            patch(
+                "linksanity.parsers.notebook.parse_markdown_string",
+                side_effect=_fail_on_first_cell,
+            ),
+            warnings.catch_warnings(record=True) as w,
+        ):
+            warnings.simplefilter("always")
+            extract_links(f, queue)
+
+        pending = _pending_by_url(queue)
+        assert "https://first.example.com" not in pending
+        assert "https://second.example.com" in pending
+        assert len(w) == 1
+        assert "markdown parse error" in str(w[0].message)
+        assert "cell 1" in str(w[0].message)

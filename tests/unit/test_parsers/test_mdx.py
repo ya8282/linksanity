@@ -2,6 +2,7 @@
 
 import warnings
 from pathlib import Path
+from unittest.mock import patch
 
 from linksanity.parsers.mdx import extract_links
 
@@ -105,3 +106,25 @@ class TestExtractLinks:
         # extracted -- proves the fence-tracking state resets on close.
         pairs = extract_links(SAMPLE)
         assert ("/after-fence", 21) in pairs
+
+    def test_parse_markdown_string_error_warns_and_returns_empty(
+        self, tmp_path: Path
+    ) -> None:
+        # parse_markdown_string() raising is a defensive branch that real
+        # MDX content is unlikely to trigger naturally, so it's forced via
+        # a mock -- a standard technique for exercising a broad `except
+        # Exception` guard.
+        f = tmp_path / "test.mdx"
+        f.write_text('[link](https://example.com) <a href="/also-here">x</a>\n')
+        with (
+            patch(
+                "linksanity.parsers.mdx.parse_markdown_string",
+                side_effect=RuntimeError("boom"),
+            ),
+            warnings.catch_warnings(record=True) as w,
+        ):
+            warnings.simplefilter("always")
+            result = extract_links(f)
+        assert result == []
+        assert len(w) == 1
+        assert "mdx parse error" in str(w[0].message)

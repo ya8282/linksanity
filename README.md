@@ -105,6 +105,27 @@ linksanity crawl https://docs.example.com --ignore-domains ignore.txt
 
 ### CI integration
 
+The fastest way to add link checking to CI is the `ya8282/linksanity-action` composite action — one line beyond checkout:
+
+```yaml
+# .github/workflows/linkcheck.yml
+name: Link check
+on: [pull_request]
+jobs:
+  linkcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ya8282/linksanity-action@v1
+        with:
+          paths: docs/
+```
+
+Prefer to install the CLI directly instead of using the action — for example on self-hosted runners without Marketplace access, or when you want full control over the install step? See the hand-rolled workflow below.
+
+<details>
+<summary>Hand-rolled workflow (no composite action)</summary>
+
 Add a link-check job that runs on every pull request and on a weekly schedule.
 
 ```yaml
@@ -188,6 +209,8 @@ https://internal.corp.example.com/*
             --format json \
             --output crawl-results.json
 ```
+
+</details>
 
 ### Pre-commit hook
 
@@ -369,10 +392,12 @@ Read results.json and summarise which links are broken and why they might have r
 | `--github-issue` | off | Open/update a GitHub Issue |
 | `--repo OWNER/REPO` | — | Required with `--github-issue` |
 | `--config FILE` | auto | Path to `linksanity.toml` |
+| `--annotations` / `--no-annotations` | auto-detect | Emit GitHub Actions `::error`/`::warning` annotations (auto-enabled in Actions unless writing JSON/CSV to bare stdout) |
+| `--offline` | off | Skip external HTTP checks, reporting them as `skipped`; doesn't touch the cache |
 
 ### `linksanity crawl <url>`
 
-Same flags as `scan`, minus `--check-anchors` and `--js-domains`, plus:
+Same flags as `scan`, minus `--check-anchors`, `--js-domains`, and `--offline`, plus:
 
 | Flag | Default | Description |
 |---|---|---|

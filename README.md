@@ -189,6 +189,26 @@ https://internal.corp.example.com/*
             --output crawl-results.json
 ```
 
+### Pre-commit hook
+
+Run linksanity locally before each commit using [pre-commit](https://pre-commit.com/). The hook defaults to `--offline` (skips live HTTP checks, reporting them as `SKIPPED`) so it stays fast and doesn't fail on a flaky network:
+
+```yaml
+# .pre-commit-config.yaml (in the consuming repo)
+repos:
+  - repo: https://github.com/ya8282/linksanity
+    rev: v0.2.0
+    hooks:
+      - id: linksanity
+```
+
+To run full (online) checks instead, pass `--no-offline` via `args:`. pre-commit appends a hook's `args:` after its `entry`, so the later flag wins over the `--offline` baked into the hook's entry:
+
+```yaml
+      - id: linksanity
+        args: [--no-offline]
+```
+
 ### GitHub Issue reporting
 
 Use `--github-issue` when you want broken links surfaced as a trackable GitHub Issue rather than just a failed CI run. It creates or updates a single `[linksanity]` issue listing every broken URL, so the team has a persistent record to triage — not just a red check mark that disappears on the next push.

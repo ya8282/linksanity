@@ -1,0 +1,7 @@
+- id: linksanity
+  name: linksanity
+  description: Detect broken links in Markdown, reStructuredText, and HTML documentation
+  entry: linksanity scan --offline
+  language: python
+  types_or: [markdown, rst, html]
+  require_serial: true

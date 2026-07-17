@@ -48,13 +48,23 @@ class TestExtractLinks:
         assert all(u for u in urls)
 
     def test_returns_line_numbers(self) -> None:
-        pairs = extract_links(SAMPLE)
-        assert len(pairs) > 0
-        assert all(isinstance(line, int) for _, line in pairs)
+        # Exact lines, not just "is an int": line 0 is an int and satisfies
+        # line >= 0, so a weaker assertion passes while every link is
+        # misreported and the fixer silently skips the file.
+        assert extract_links(SAMPLE) == [
+            ("https://example.com", 5),
+            ("https://broken.example.com/does-not-exist", 6),
+            ("./other.html", 7),
+            ("#section", 8),
+            ("mailto:test@example.com", 9),
+            ("javascript:void(0)", 10),
+            ("https://in-code-tag.example.com", 13),
+            ("https://line14.example.com", 14),
+        ]
 
     def test_line_numbers_are_positive(self) -> None:
         pairs = extract_links(SAMPLE)
-        assert all(line >= 0 for _, line in pairs)
+        assert all(line >= 1 for _, line in pairs)
 
     def test_missing_file_warns_and_returns_empty(self) -> None:
         with warnings.catch_warnings(record=True) as w:

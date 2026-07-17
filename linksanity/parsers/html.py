@@ -1,4 +1,9 @@
-"""Extract links from HTML files using BeautifulSoup + lxml."""
+"""Extract links from HTML files using BeautifulSoup + html.parser.
+
+html.parser rather than lxml: bs4 leaves sourceline None on every lxml-built
+tag, which reported all links as line 0 and made the fixer skip HTML entirely.
+Same trade docbook.py makes -- the backend that yields real line numbers wins.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +27,7 @@ def extract_links(path: Path, *, include_images: bool = False) -> list[tuple[str
         return []
 
     try:
-        soup = BeautifulSoup(content, "lxml")
+        soup = BeautifulSoup(content, "html.parser")
     except Exception as e:  # noqa: BLE001
         warnings.warn(f"[linksanity] HTML parse error in {path}: {e}", stacklevel=2)
         return []
@@ -34,7 +39,6 @@ def extract_links(path: Path, *, include_images: bool = False) -> list[tuple[str
         href = str(tag.get("href", "")).strip()
         if not href:
             continue
-        # lxml exposes sourceline on the underlying element
         line: int = getattr(tag, "sourceline", 0) or 0
         results.append((href, line))
 

@@ -69,9 +69,24 @@ class TestExtractLinks:
         assert not any(u.startswith("javascript:") for u in urls)
 
     def test_returns_line_numbers(self) -> None:
-        pairs = extract_links(SAMPLE)
-        lines = [line for _, line in pairs]
-        assert all(isinstance(line, int) and line >= 1 for line in lines)
+        # Exact lines, not just ">= 1": lines 3-7 are one paragraph, and
+        # markdown-it numbers the paragraph, so all five links reported line 3
+        # while the weaker assertion passed. The reference-style link resolves
+        # to line 20, where its URL is actually written and rewritable.
+        assert extract_links(SAMPLE) == [
+            ("https://example.com", 3),
+            ("https://broken.example.com/does-not-exist", 4),
+            ("./other.md", 5),
+            ("#section", 6),
+            ("https://reference.example.com", 20),
+            ("https://blockquote.example.com", 9),
+            ("https://list.example.com", 12),
+        ]
+
+    def test_repeated_url_in_one_paragraph_gets_own_lines(self, tmp_path: Path) -> None:
+        f = tmp_path / "dup.md"
+        f.write_text("Intro\n\nOne [a](https://a.com) here\nand two [a](https://a.com) here.\n")
+        assert extract_links(f) == [("https://a.com", 3), ("https://a.com", 4)]
 
     def test_missing_file_warns_and_returns_empty(self) -> None:
         with warnings.catch_warnings(record=True) as w:

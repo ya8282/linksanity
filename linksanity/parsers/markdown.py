@@ -8,6 +8,8 @@ from pathlib import Path
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
+from linksanity.parsers._lines import find_line
+
 
 def parse_markdown_string(content: str, *, include_images: bool = False) -> list[tuple[str, int]]:
     """Parse already-loaded Markdown content and extract (url, line) pairs.
@@ -18,7 +20,7 @@ def parse_markdown_string(content: str, *, include_images: bool = False) -> list
     """
     md = MarkdownIt().enable("linkify")
     tokens = md.parse(content)
-    return _collect(tokens, include_images=include_images)
+    return _collect(tokens, content.split("\n"), include_images=include_images)
 
 
 def extract_links(path: Path, *, include_images: bool = False) -> list[tuple[str, int]]:
@@ -40,20 +42,25 @@ def extract_links(path: Path, *, include_images: bool = False) -> list[tuple[str
         warnings.warn(f"[linksanity] markdown parse error in {path}: {e}", stacklevel=2)
         return []
 
-def _collect(tokens: list[Token], *, include_images: bool = False) -> list[tuple[str, int]]:
+def _collect(
+    tokens: list[Token], lines: list[str], *, include_images: bool = False
+) -> list[tuple[str, int]]:
     results: list[tuple[str, int]] = []
     target_types = ("link_open", "image") if include_images else ("link_open",)
+    cursors: dict[str, int] = {}
     for token in tokens:
         # fence and code_block tokens are not inline — their content is code
         if token.type in ("fence", "code_block"):
             continue
         if token.type == "inline" and token.children:
-            line = (token.map[0] + 1) if token.map else 1
+            # token.map spans the whole paragraph, so it is only a starting
+            # point; find_line pins each link to its own line.
+            hint = (token.map[0] + 1) if token.map else 1
             for child in token.children:
                 if child.type in target_types:
                     attr = "src" if child.type == "image" else "href"
                     raw = child.attrGet(attr)
                     href = str(raw) if isinstance(raw, str) else ""
                     if href:
-                        results.append((href, line))
+                        results.append((href, find_line(lines, href, hint, cursors)))
     return results

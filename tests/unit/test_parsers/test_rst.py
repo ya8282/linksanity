@@ -42,9 +42,28 @@ class TestExtractLinks:
         assert any(u.startswith("mailto:") for u in urls)
 
     def test_returns_line_numbers(self) -> None:
+        # Exact lines, not just "is an int": docutils leaves node.line None on
+        # inline references, so `or 0` reported every link as line 0 while
+        # isinstance(line, int) still passed.
+        assert set(extract_links(SAMPLE)) == {
+            ("https://example.com", 4),
+            ("https://broken.example.com/does-not-exist", 5),
+            ("https://target.example.com", 9),
+            ("https://anonymous.example.com", 11),
+        }
+
+    def test_inline_link_not_duplicated(self) -> None:
+        # One inline hyperlink produces both a reference and a target node in
+        # docutils; each link must still be reported once.
         pairs = extract_links(SAMPLE)
-        assert len(pairs) > 0
-        assert all(isinstance(line, int) for _, line in pairs)
+        assert len(pairs) == len(set(pairs))
+
+    def test_links_in_one_paragraph_get_own_lines(self, tmp_path: Path) -> None:
+        # Both links live in a single paragraph, so docutils reports the
+        # paragraph's start line for both.
+        f = tmp_path / "para.rst"
+        f.write_text("Intro\n\nFirst `a <https://a.com>`_ here.\nSecond `b <https://b.com>`_ here.\n")
+        assert set(extract_links(f)) == {("https://a.com", 3), ("https://b.com", 4)}
 
     def test_missing_file_warns_and_returns_empty(self) -> None:
         with warnings.catch_warnings(record=True) as w:

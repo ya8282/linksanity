@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 import respx
 
-from linksanity.checkers.http import _domain_match, check
+from linksanity.checkers.http import _domain_match, _is_private_host, _resolve, check
 from linksanity.queue import LinkStatus, LinkType
 
 SOURCE = "docs/index.md"
@@ -271,6 +273,108 @@ class TestCellForwarding:
             URL, **make_kwargs(ignore_domains={"example.com"})  # type: ignore[arg-type]
         )
         assert result.cell is None
+
+
+class TestPrivateHostGuard:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("host", ["localhost", "LocalHost", "metadata.google.internal"])
+    async def test_known_private_hostnames_are_blocked(self, host: str) -> None:
+        assert await _is_private_host(host) is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("host", [
+        "127.0.0.1",        # loopback
+        "10.0.0.1",         # private
+        "192.168.1.1",      # private
+        "172.16.0.1",       # private
+        "169.254.169.254",  # link-local: cloud metadata
+        "::1",              # ipv6 loopback
+        "fe80::1",          # ipv6 link-local
+    ])
+    async def test_private_ip_literals_are_blocked(self, host: str) -> None:
+        assert await _is_private_host(host) is True
+
+    @pytest.mark.asyncio
+    async def test_public_ip_literal_is_allowed(self) -> None:
+        assert await _is_private_host("93.184.216.34") is False
+
+    @pytest.mark.asyncio
+    async def test_hostname_resolving_to_loopback_is_blocked(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The bypass this guard exists to stop: a public name (localtest.me,
+        # *.nip.io) that answers with a loopback address.
+        async def resolve(_host: str) -> list[str]:
+            return ["127.0.0.1"]
+
+        monkeypatch.setattr("linksanity.checkers.http._resolve", resolve)
+        assert await _is_private_host("localtest.me") is True
+
+    @pytest.mark.asyncio
+    async def test_hostname_resolving_to_metadata_address_is_blocked(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def resolve(_host: str) -> list[str]:
+            return ["169.254.169.254"]
+
+        monkeypatch.setattr("linksanity.checkers.http._resolve", resolve)
+        assert await _is_private_host("metadata.example.com") is True
+
+    @pytest.mark.asyncio
+    async def test_any_private_address_in_the_answer_blocks(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A name answering with both a public and a private address is still
+        # a way into the private one.
+        async def resolve(_host: str) -> list[str]:
+            return ["93.184.216.34", "10.0.0.5"]
+
+        monkeypatch.setattr("linksanity.checkers.http._resolve", resolve)
+        assert await _is_private_host("split.example.com") is True
+
+    @pytest.mark.asyncio
+    async def test_public_hostname_is_allowed(self) -> None:
+        assert await _is_private_host("example.com") is False
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_hostname_is_allowed_through(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Nothing to connect to: let the request fail and report the real error
+        # rather than mislabelling it as private.
+        async def resolve(_host: str) -> list[str]:
+            return []
+
+        monkeypatch.setattr("linksanity.checkers.http._resolve", resolve)
+        assert await _is_private_host("no-such-host.invalid") is False
+
+    @pytest.mark.asyncio
+    async def test_check_skips_a_url_whose_host_resolves_to_private(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def resolve(_host: str) -> list[str]:
+            return ["127.0.0.1"]
+
+        monkeypatch.setattr("linksanity.checkers.http._resolve", resolve)
+        result = await check("https://localtest.me/x", **make_kwargs())  # type: ignore[arg-type]
+        assert result.status is LinkStatus.SKIPPED
+        assert result.error == "skipped: private/loopback address"
+
+
+class TestResolve:
+    @pytest.mark.asyncio
+    async def test_resolution_failure_returns_empty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # _resolve is stubbed suite-wide, so exercise the real one here.
+        monkeypatch.undo()
+
+        async def boom(*_a: object, **_k: object) -> list[object]:
+            raise OSError("name or service not known")
+
+        loop = asyncio.get_running_loop()
+        monkeypatch.setattr(loop, "getaddrinfo", boom)
+        assert await _resolve("no-such-host.invalid") == []
 
 
 class TestDomainMatch:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import socket
 from urllib.parse import urlparse
 
 import httpx
@@ -19,15 +20,52 @@ _HEADERS = {"User-Agent": "linksanity/0.1 link-checker (+https://github.com/link
 _PRIVATE_HOSTNAMES = frozenset({"localhost", "metadata.google.internal"})
 
 
-def _is_private_host(hostname: str) -> bool:
-    """Return True if hostname is a loopback, link-local, or private address."""
-    if hostname.lower() in _PRIVATE_HOSTNAMES:
-        return True
+def _is_private_ip(raw: str) -> bool:
+    """True if `raw` parses as a loopback, link-local, or private address."""
     try:
-        addr = ipaddress.ip_address(hostname)
-        return addr.is_loopback or addr.is_link_local or addr.is_private
+        # A scope id (fe80::1%en0) is not part of the address itself.
+        addr = ipaddress.ip_address(raw.partition("%")[0])
     except ValueError:
         return False
+    return addr.is_loopback or addr.is_link_local or addr.is_private
+
+
+def _is_ip_literal(raw: str) -> bool:
+    try:
+        ipaddress.ip_address(raw.partition("%")[0])
+    except ValueError:
+        return False
+    return True
+
+
+async def _resolve(hostname: str) -> list[str]:
+    """Addresses `hostname` resolves to; empty when it does not resolve."""
+    try:
+        infos = await asyncio.get_running_loop().getaddrinfo(
+            hostname, None, proto=socket.IPPROTO_TCP
+        )
+    except OSError:
+        # Unresolvable: let the request fail on its own and report the real error.
+        return []
+    return [str(info[4][0]) for info in infos]
+
+
+async def _is_private_host(hostname: str) -> bool:
+    """True if hostname is private, or resolves to a private address.
+
+    Screening the literal hostname alone was bypassable: any public DNS name
+    answering with 127.0.0.1 (localtest.me, *.nip.io) or a cloud metadata
+    address walked straight through.
+
+    ponytail: checks the address we resolve, not the one httpx later connects
+    to. A rebinding attacker answering differently for httpx's own lookup still
+    gets through; pinning the connection to the checked address needs a custom
+    transport, worth doing if this ever returns more than a status code.
+    """
+    if hostname.lower() in _PRIVATE_HOSTNAMES:
+        return True
+    candidates = [hostname] if _is_ip_literal(hostname) else await _resolve(hostname)
+    return any(_is_private_ip(addr) for addr in candidates)
 
 
 async def check(
@@ -53,7 +91,7 @@ async def check(
     domain = parsed.netloc.lower()
     hostname = parsed.hostname or ""
 
-    if _is_private_host(hostname):
+    if await _is_private_host(hostname):
         return LinkResult(
             source_file=source_file, line=line, url=url,
             link_type=link_type, status=LinkStatus.SKIPPED,

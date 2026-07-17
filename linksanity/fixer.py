@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import difflib
 import os
 import re
@@ -10,6 +11,9 @@ import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from urllib.parse import quote
+
+import httpx
 
 from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
 
@@ -121,9 +125,7 @@ def build_moved_file_proposals(
         if r.url.startswith("docbook-xref:"):
             continue
         path_part, _, fragment = r.url.partition("#")
-        basename = Path(path_part).name if path_part else ""
-        if not basename:
-            continue
+        basename = Path(path_part).name
         suffix = f"#{fragment}" if fragment else ""
 
         for source_file, line in queue.sources(r.url):
@@ -172,6 +174,79 @@ def build_moved_file_proposals(
                     detail=detail,
                 )
                 for target, auto, detail in matches
+            )
+    return proposals
+
+
+# ── Wayback suggester ─────────────────────────────────────────────────────────
+
+_WAYBACK_API = "https://archive.org/wayback/available"
+
+
+def _wayback_eligible(result: LinkResult) -> bool:
+    """True for external links dead enough to be worth an archive lookup."""
+    if result.link_type is not LinkType.EXTERNAL:
+        return False
+    if result.status is LinkStatus.BROKEN:
+        return result.http_code in (404, 410)
+    # ponytail: any transport error counts, rather than sniffing error strings
+    # for DNS specifically — the platform wording varies and the cost of a
+    # false positive is one extra suggestion the human ignores.
+    return result.status is LinkStatus.ERROR
+
+
+async def _wayback_lookup(
+    client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore
+) -> str | None:
+    """Return an archive.org snapshot URL, or None. Never raises."""
+    async with sem:
+        try:
+            resp = await client.get(f"{_WAYBACK_API}?url={quote(url, safe='')}")
+            closest = resp.json().get("archived_snapshots", {}).get("closest")
+        except Exception as exc:  # noqa: BLE001 — an archive.org outage must never fail the run
+            print(f"[linksanity] wayback lookup failed for {url}: {exc}", file=sys.stderr)
+            return None
+    if closest and closest.get("available") is True and closest.get("url"):
+        return str(closest["url"])
+    return None
+
+
+async def build_wayback_proposals(
+    results: list[LinkResult],
+    queue: LinkQueue,
+    *,
+    timeout: int,
+    workers: int = 8,
+) -> list[FixProposal]:
+    """Suggest archive.org snapshots for dead external links. Never auto-applied."""
+    targets = [r for r in results if _wayback_eligible(r)]
+    if not targets:
+        return []
+
+    sem = asyncio.Semaphore(workers)
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(float(timeout)), follow_redirects=True
+    ) as client:
+        snapshots = await asyncio.gather(
+            *[_wayback_lookup(client, r.url, sem) for r in targets]
+        )
+
+    proposals: list[FixProposal] = []
+    for result, snapshot in zip(targets, snapshots, strict=True):
+        if snapshot is None:
+            continue
+        reason = f"HTTP {result.http_code}" if result.http_code else (result.error or "unreachable")
+        for source_file, line in queue.sources(result.url):
+            proposals.append(
+                FixProposal(
+                    source_file=source_file,
+                    line=line,
+                    old_url=result.url,
+                    new_url=snapshot,
+                    kind=FixKind.WAYBACK,
+                    auto_applicable=False,
+                    detail=f"dead ({reason}); archive.org snapshot available — review before using",
+                )
             )
     return proposals
 

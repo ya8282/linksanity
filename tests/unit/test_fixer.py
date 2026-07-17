@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
+import respx
 
 from linksanity.fixer import (
     FixKind,
@@ -12,6 +14,7 @@ from linksanity.fixer import (
     apply_proposals,
     build_moved_file_proposals,
     build_redirect_proposals,
+    build_wayback_proposals,
     is_permanent_redirect,
     render_diff,
 )
@@ -296,6 +299,125 @@ class TestMovedFileProposals:
             [_broken_internal(url, str(source))], q, [target]
         )
         assert p.auto_applicable is False
+
+
+# ── Wayback suggester ─────────────────────────────────────────────────────────
+
+DEAD = "http://dead.example.com/page"
+SNAPSHOT = "http://web.archive.org/web/20200101/http://dead.example.com/page"
+WAYBACK_API = "https://archive.org/wayback/available"
+
+
+def _dead(**overrides: object) -> LinkResult:
+    defaults: dict[str, object] = {
+        "source_file": "docs/a.md",
+        "line": 1,
+        "url": DEAD,
+        "link_type": LinkType.EXTERNAL,
+        "status": LinkStatus.BROKEN,
+        "http_code": 404,
+    }
+    defaults.update(overrides)
+    return LinkResult(**defaults)  # type: ignore[arg-type]
+
+
+def _available(available: bool = True) -> httpx.Response:
+    if not available:
+        return httpx.Response(200, json={"archived_snapshots": {}})
+    return httpx.Response(200, json={
+        "archived_snapshots": {
+            "closest": {"available": True, "url": SNAPSHOT, "status": "200"}
+        }
+    })
+
+
+class TestWaybackProposals:
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_snapshot_becomes_a_suggestion(self) -> None:
+        respx.get(url__startswith=WAYBACK_API).mock(return_value=_available())
+        q = _queue(("docs/a.md", 1), url=DEAD)
+        [p] = await build_wayback_proposals([_dead()], q, timeout=5)
+        assert p.kind is FixKind.WAYBACK
+        assert p.new_url == SNAPSHOT
+        assert p.auto_applicable is False   # never auto-applied, by design
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_no_snapshot_yields_nothing(self) -> None:
+        respx.get(url__startswith=WAYBACK_API).mock(return_value=_available(False))
+        q = _queue(("docs/a.md", 1), url=DEAD)
+        assert await build_wayback_proposals([_dead()], q, timeout=5) == []
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_archive_timeout_degrades_to_no_suggestion(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        respx.get(url__startswith=WAYBACK_API).mock(
+            side_effect=httpx.ConnectTimeout("archive.org is down")
+        )
+        q = _queue(("docs/a.md", 1), url=DEAD)
+        assert await build_wayback_proposals([_dead()], q, timeout=5) == []
+        assert capsys.readouterr().err != ""   # noted, not raised
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_malformed_json_degrades_to_no_suggestion(self) -> None:
+        respx.get(url__startswith=WAYBACK_API).mock(
+            return_value=httpx.Response(200, text="<html>not json</html>")
+        )
+        q = _queue(("docs/a.md", 1), url=DEAD)
+        assert await build_wayback_proposals([_dead()], q, timeout=5) == []
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_410_is_eligible(self) -> None:
+        respx.get(url__startswith=WAYBACK_API).mock(return_value=_available())
+        q = _queue(("docs/a.md", 1), url=DEAD)
+        assert len(await build_wayback_proposals([_dead(http_code=410)], q, timeout=5)) == 1
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_transport_error_is_eligible(self) -> None:
+        respx.get(url__startswith=WAYBACK_API).mock(return_value=_available())
+        q = _queue(("docs/a.md", 1), url=DEAD)
+        result = _dead(status=LinkStatus.ERROR, http_code=None, error="dns failure")
+        assert len(await build_wayback_proposals([result], q, timeout=5)) == 1
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_500_is_not_eligible(self) -> None:
+        # A server error is transient, not link rot — no archive lookup at all.
+        route = respx.get(url__startswith=WAYBACK_API).mock(return_value=_available())
+        q = _queue(("docs/a.md", 1), url=DEAD)
+        assert await build_wayback_proposals([_dead(http_code=500)], q, timeout=5) == []
+        assert not route.called
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_internal_link_is_not_eligible(self) -> None:
+        route = respx.get(url__startswith=WAYBACK_API).mock(return_value=_available())
+        q = _queue(("docs/a.md", 1), url=DEAD)
+        result = _dead(link_type=LinkType.INTERNAL)
+        assert await build_wayback_proposals([result], q, timeout=5) == []
+        assert not route.called
+
+    @pytest.mark.asyncio
+    async def test_no_eligible_results_makes_no_client(self) -> None:
+        # No respx mock installed: if this tried any I/O it would fail.
+        q = _queue(("docs/a.md", 1), url=DEAD)
+        assert await build_wayback_proposals([_dead(status=LinkStatus.OK)], q, timeout=5) == []
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_one_suggestion_per_occurrence(self) -> None:
+        respx.get(url__startswith=WAYBACK_API).mock(return_value=_available())
+        q = _queue(("docs/a.md", 1), ("docs/b.md", 7), url=DEAD)
+        proposals = await build_wayback_proposals([_dead()], q, timeout=5)
+        assert [(p.source_file, p.line) for p in proposals] == [
+            ("docs/a.md", 1), ("docs/b.md", 7)
+        ]
 
 
 # ── Rewrite engine ────────────────────────────────────────────────────────────

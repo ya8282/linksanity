@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-from linksanity.queue import LinkQueue, LinkResult, LinkStatus
+from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
 
 # Suffixes whose recorded line numbers are file-level, and so safe to rewrite.
 # .ipynb is deliberately absent: notebook results carry within-cell line
@@ -87,6 +87,91 @@ def build_redirect_proposals(
                     auto_applicable=auto,
                     detail=detail,
                 )
+            )
+    return proposals
+
+
+# ── Moved-file resolver ───────────────────────────────────────────────────────
+
+
+def _relative_url(target: Path, source_dir: Path) -> str:
+    """Path from source_dir to target, as a forward-slash relative URL."""
+    return Path(os.path.relpath(target, start=source_dir)).as_posix()
+
+
+def build_moved_file_proposals(
+    results: list[LinkResult],
+    queue: LinkQueue,
+    corpus_files: list[Path],
+) -> list[FixProposal]:
+    """Propose re-pointing broken internal links at corpus files matching by basename.
+
+    Deliberately simple: exact basename, exactly one candidate → auto-fix.
+    Anything ambiguous is suggested, never guessed. No git-rename archaeology.
+    """
+    index: dict[str, list[Path]] = {}
+    for path in corpus_files:
+        index.setdefault(path.name, []).append(path)
+
+    proposals: list[FixProposal] = []
+    for r in results:
+        if r.status is not LinkStatus.BROKEN or r.link_type is not LinkType.INTERNAL:
+            continue
+        # DocBook xrefs are id lookups against the corpus, not file paths.
+        if r.url.startswith("docbook-xref:"):
+            continue
+        path_part, _, fragment = r.url.partition("#")
+        basename = Path(path_part).name if path_part else ""
+        if not basename:
+            continue
+        suffix = f"#{fragment}" if fragment else ""
+
+        for source_file, line in queue.sources(r.url):
+            source_dir = Path(source_file).parent
+            # If the target resolves from this source, the link broke for some
+            # other reason (a missing anchor) — the file has not moved.
+            if (source_dir / path_part).exists():
+                continue
+
+            # (target, auto_applicable, detail)
+            candidates = index.get(basename, [])
+            matches: list[tuple[Path, bool, str]]
+            if len(candidates) == 1 and _is_rewritable(source_file):
+                matches = [
+                    (candidates[0], True, f"unique file named {basename!r} in the scanned corpus")
+                ]
+            elif len(candidates) == 1:
+                fmt = Path(source_file).suffix or "no suffix"
+                matches = [
+                    (
+                        candidates[0],
+                        False,
+                        f"unique file named {basename!r}, but {fmt} is not rewritable",
+                    )
+                ]
+            elif candidates:
+                matches = [
+                    (c, False, f"{len(candidates)} files named {basename!r} — ambiguous, pick one")
+                    for c in candidates
+                ]
+            else:
+                matches = [
+                    (c, False, f"no file named {basename!r}; closest match is {name!r}")
+                    for name in difflib.get_close_matches(basename, list(index), n=3, cutoff=0.8)
+                    for c in index[name]
+                ]
+
+            proposals.extend(
+                FixProposal(
+                    source_file=source_file,
+                    line=line,
+                    old_url=r.url,
+                    new_url=_relative_url(target, source_dir) + suffix,
+                    kind=FixKind.MOVED_FILE,
+                    auto_applicable=auto,
+                    detail=detail,
+                )
+                for target, auto, detail in matches
             )
     return proposals
 

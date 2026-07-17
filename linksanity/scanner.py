@@ -26,6 +26,9 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
     cache = Cache(Path(config.cache_file), config.cache_ttl) if config.cache_file else None
 
     paths = _expand_paths(patterns)
+    # Record the full corpus before any incremental filtering: the fixer's
+    # moved-file resolver needs every candidate target, not just changed files.
+    queue.corpus_files = list(paths)
     if config.incremental:
         paths = _filter_changed(paths, config, cache)
 

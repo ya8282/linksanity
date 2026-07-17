@@ -35,6 +35,37 @@ def _mock_dispatch() -> AsyncMock:
     return mock
 
 
+class TestCorpusFiles:
+    @pytest.mark.asyncio
+    async def test_expanded_corpus_recorded_on_queue(self, tmp_path: Path) -> None:
+        (tmp_path / "a.md").write_text("[l](https://example.com)\n")
+        (tmp_path / "b.md").write_text("no links\n")
+
+        with patch("linksanity.scanner.dispatch", new=_mock_dispatch()):
+            queue = await run_scan([str(tmp_path)], Config())
+
+        assert sorted(p.name for p in queue.corpus_files) == ["a.md", "b.md"]
+
+    @pytest.mark.asyncio
+    async def test_corpus_keeps_unchanged_files_under_incremental(
+        self, tmp_path: Path
+    ) -> None:
+        # The fixer needs every move candidate, not just the changed files.
+        _git(tmp_path, "init")
+        _git(tmp_path, "config", "user.email", "t@example.com")
+        _git(tmp_path, "config", "user.name", "t")
+        (tmp_path / "a.md").write_text("[l](https://example.com)\n")
+        (tmp_path / "b.md").write_text("no links\n")
+        _git(tmp_path, "add", ".")
+        _git(tmp_path, "commit", "-m", "init")
+
+        config = Config(incremental=True, since="HEAD")
+        with patch("linksanity.scanner.dispatch", new=_mock_dispatch()):
+            queue = await run_scan([str(tmp_path)], config)
+
+        assert sorted(p.name for p in queue.corpus_files) == ["a.md", "b.md"]
+
+
 class TestCacheIntegration:
     @pytest.mark.asyncio
     async def test_cache_miss_dispatches_and_persists(self, tmp_path: Path) -> None:

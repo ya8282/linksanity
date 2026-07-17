@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 
 
 class LinkStatus(Enum):
@@ -40,6 +41,9 @@ class LinkResult:
 class LinkQueue:
     """Deduplicates URLs across sources and aggregates results."""
 
+    # Every file the scan expanded from its targets. The fixer's moved-file
+    # resolver indexes this rather than walking the tree a second time.
+    corpus_files: list[Path] = field(default_factory=list)
     _seen: dict[str, list[tuple[str, int]]] = field(default_factory=dict, repr=False)
     _link_types: dict[str, LinkType] = field(default_factory=dict, repr=False)
     _cells: dict[str, int | None] = field(default_factory=dict, repr=False)

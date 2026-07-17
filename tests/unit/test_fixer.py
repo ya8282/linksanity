@@ -10,6 +10,7 @@ from linksanity.fixer import (
     FixKind,
     FixProposal,
     apply_proposals,
+    build_moved_file_proposals,
     build_redirect_proposals,
     is_permanent_redirect,
     render_diff,
@@ -135,6 +136,166 @@ class TestRedirectProposals:
         [p] = build_redirect_proposals([_result(redirect_codes=[301, 308])], q)
         assert "301,308" in p.detail
         assert NEW in p.detail
+
+
+# ── Moved-file resolver ───────────────────────────────────────────────────────
+
+def _broken_internal(url: str, source_file: str = "docs/a.md") -> LinkResult:
+    return LinkResult(
+        source_file=source_file,
+        line=1,
+        url=url,
+        link_type=LinkType.INTERNAL,
+        status=LinkStatus.BROKEN,
+        error="file not found",
+    )
+
+
+class TestMovedFileProposals:
+    def test_unique_basename_match_is_auto_applicable(self, tmp_path: Path) -> None:
+        (tmp_path / "docs" / "reference").mkdir(parents=True)
+        target = tmp_path / "docs" / "reference" / "setup.md"
+        target.write_text("x", encoding="utf-8")
+        source = tmp_path / "docs" / "a.md"
+        source.write_text("x", encoding="utf-8")
+
+        url = "./guide/setup.md"
+        q = _queue((str(source), 1), url=url)
+        [p] = build_moved_file_proposals(
+            [_broken_internal(url, str(source))], q, [target, source]
+        )
+        assert p.kind is FixKind.MOVED_FILE
+        assert p.auto_applicable is True
+        assert p.new_url == "reference/setup.md"
+
+    def test_fragment_is_preserved(self, tmp_path: Path) -> None:
+        (tmp_path / "docs" / "reference").mkdir(parents=True)
+        target = tmp_path / "docs" / "reference" / "setup.md"
+        target.write_text("x", encoding="utf-8")
+        source = tmp_path / "docs" / "a.md"
+        source.write_text("x", encoding="utf-8")
+
+        url = "./guide/setup.md#install"
+        q = _queue((str(source), 1), url=url)
+        [p] = build_moved_file_proposals(
+            [_broken_internal(url, str(source))], q, [target, source]
+        )
+        assert p.new_url == "reference/setup.md#install"
+
+    def test_relpath_walks_up_across_sibling_dirs(self, tmp_path: Path) -> None:
+        # source in docs/guide/, target in docs/reference/ → needs ../
+        (tmp_path / "docs" / "guide").mkdir(parents=True)
+        (tmp_path / "docs" / "reference").mkdir(parents=True)
+        target = tmp_path / "docs" / "reference" / "setup.md"
+        target.write_text("x", encoding="utf-8")
+        source = tmp_path / "docs" / "guide" / "a.md"
+        source.write_text("x", encoding="utf-8")
+
+        url = "./setup.md#install"
+        q = _queue((str(source), 1), url=url)
+        [p] = build_moved_file_proposals(
+            [_broken_internal(url, str(source))], q, [target, source]
+        )
+        assert p.new_url == "../reference/setup.md#install"
+
+    def test_ambiguous_basename_yields_suggestions_not_a_guess(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "one").mkdir()
+        (tmp_path / "two").mkdir()
+        a = tmp_path / "one" / "setup.md"
+        b = tmp_path / "two" / "setup.md"
+        for f in (a, b):
+            f.write_text("x", encoding="utf-8")
+        source = tmp_path / "a.md"
+        source.write_text("x", encoding="utf-8")
+
+        url = "./gone/setup.md"
+        q = _queue((str(source), 1), url=url)
+        proposals = build_moved_file_proposals(
+            [_broken_internal(url, str(source))], q, [a, b, source]
+        )
+        assert len(proposals) == 2
+        assert all(p.auto_applicable is False for p in proposals)
+        assert {p.new_url for p in proposals} == {"one/setup.md", "two/setup.md"}
+
+    def test_no_match_falls_back_to_close_matches_as_suggestions(
+        self, tmp_path: Path
+    ) -> None:
+        target = tmp_path / "setup.md"
+        target.write_text("x", encoding="utf-8")
+        source = tmp_path / "a.md"
+        source.write_text("x", encoding="utf-8")
+
+        url = "./setpu.md"  # typo, no exact basename match
+        q = _queue((str(source), 1), url=url)
+        [p] = build_moved_file_proposals(
+            [_broken_internal(url, str(source))], q, [target, source]
+        )
+        assert p.auto_applicable is False
+        assert p.new_url == "setup.md"
+
+    def test_no_match_and_nothing_close_yields_nothing(self, tmp_path: Path) -> None:
+        target = tmp_path / "wildly-different.md"
+        target.write_text("x", encoding="utf-8")
+        source = tmp_path / "a.md"
+        source.write_text("x", encoding="utf-8")
+
+        url = "./setup.md"
+        q = _queue((str(source), 1), url=url)
+        assert build_moved_file_proposals(
+            [_broken_internal(url, str(source))], q, [target, source]
+        ) == []
+
+    def test_existing_target_is_not_a_moved_file(self, tmp_path: Path) -> None:
+        # Broken because of a missing anchor, not a missing file. Re-pointing
+        # the path would be wrong — the file is exactly where the link says.
+        target = tmp_path / "setup.md"
+        target.write_text("x", encoding="utf-8")
+        source = tmp_path / "a.md"
+        source.write_text("x", encoding="utf-8")
+
+        url = "./setup.md#no-such-anchor"
+        q = _queue((str(source), 1), url=url)
+        assert build_moved_file_proposals(
+            [_broken_internal(url, str(source))], q, [target, source]
+        ) == []
+
+    def test_external_and_ok_results_ignored(self, tmp_path: Path) -> None:
+        target = tmp_path / "setup.md"
+        target.write_text("x", encoding="utf-8")
+        q = _queue(("docs/a.md", 1), url="./gone/setup.md")
+        results = [
+            LinkResult(
+                source_file="docs/a.md", line=1, url="./gone/setup.md",
+                link_type=LinkType.EXTERNAL, status=LinkStatus.BROKEN,
+            ),
+            LinkResult(
+                source_file="docs/a.md", line=1, url="./gone/setup.md",
+                link_type=LinkType.INTERNAL, status=LinkStatus.OK,
+            ),
+        ]
+        assert build_moved_file_proposals(results, q, [target]) == []
+
+    def test_docbook_xref_sentinel_ignored(self, tmp_path: Path) -> None:
+        target = tmp_path / "setup.md"
+        target.write_text("x", encoding="utf-8")
+        url = "docbook-xref:some-id"
+        q = _queue(("docs/a.md", 1), url=url)
+        assert build_moved_file_proposals([_broken_internal(url)], q, [target]) == []
+
+    def test_non_rewritable_source_is_suggestion_only(self, tmp_path: Path) -> None:
+        target = tmp_path / "setup.md"
+        target.write_text("x", encoding="utf-8")
+        source = tmp_path / "nb.ipynb"
+        source.write_text("x", encoding="utf-8")
+
+        url = "./gone/setup.md"
+        q = _queue((str(source), 1), url=url)
+        [p] = build_moved_file_proposals(
+            [_broken_internal(url, str(source))], q, [target]
+        )
+        assert p.auto_applicable is False
 
 
 # ── Rewrite engine ────────────────────────────────────────────────────────────

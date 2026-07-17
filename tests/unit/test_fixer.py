@@ -426,8 +426,8 @@ class TestApplyProposals:
     def test_rewrites_the_url_on_the_recorded_line(self, tmp_path: Path) -> None:
         f = tmp_path / "a.md"
         f.write_text(f"# Title\nSee [docs]({OLD}) for more.\n", encoding="utf-8")
-        modified = apply_proposals([_proposal(str(f), 2)])
-        assert modified == [str(f)]
+        applied, modified = apply_proposals([_proposal(str(f), 2)])
+        assert (applied, modified) == (1, [str(f)])
         assert f.read_text(encoding="utf-8") == f"# Title\nSee [docs]({NEW}) for more.\n"
 
     def test_touches_no_other_line(self, tmp_path: Path) -> None:
@@ -447,8 +447,8 @@ class TestApplyProposals:
     ) -> None:
         f = tmp_path / "a.md"
         f.write_text(f"{OLD}/deeper/page\n", encoding="utf-8")
-        modified = apply_proposals([_proposal(str(f), 1)])
-        assert modified == []
+        applied, modified = apply_proposals([_proposal(str(f), 1)])
+        assert (applied, modified) == (0, [])
         assert f.read_text(encoding="utf-8") == f"{OLD}/deeper/page\n"
 
     def test_prefix_guard_still_fixes_a_real_match_on_the_same_line(
@@ -463,9 +463,10 @@ class TestApplyProposals:
         a, b = tmp_path / "a.md", tmp_path / "b.md"
         a.write_text(f"{OLD}\n{OLD}\n", encoding="utf-8")
         b.write_text(f"x\n{OLD}\n", encoding="utf-8")
-        modified = apply_proposals([
+        applied, modified = apply_proposals([
             _proposal(str(a), 1), _proposal(str(a), 2), _proposal(str(b), 2)
         ])
+        assert applied == 3
         assert sorted(modified) == sorted([str(a), str(b)])
         assert a.read_text(encoding="utf-8") == f"{NEW}\n{NEW}\n"
         assert b.read_text(encoding="utf-8") == f"x\n{NEW}\n"
@@ -473,8 +474,8 @@ class TestApplyProposals:
     def test_suggestion_only_proposals_are_never_applied(self, tmp_path: Path) -> None:
         f = tmp_path / "a.md"
         f.write_text(f"{OLD}\n", encoding="utf-8")
-        modified = apply_proposals([_proposal(str(f), 1, auto_applicable=False)])
-        assert modified == []
+        applied, modified = apply_proposals([_proposal(str(f), 1, auto_applicable=False)])
+        assert (applied, modified) == (0, [])
         assert f.read_text(encoding="utf-8") == f"{OLD}\n"
 
     def test_stale_line_is_skipped_with_a_warning(
@@ -483,8 +484,8 @@ class TestApplyProposals:
         # File edited since the scan: the URL is no longer on line 1.
         f = tmp_path / "a.md"
         f.write_text("something else entirely\n", encoding="utf-8")
-        modified = apply_proposals([_proposal(str(f), 1)])
-        assert modified == []
+        applied, modified = apply_proposals([_proposal(str(f), 1)])
+        assert (applied, modified) == (0, [])
         assert f.read_text(encoding="utf-8") == "something else entirely\n"
         assert "skipped" in capsys.readouterr().err.lower()
 
@@ -493,16 +494,30 @@ class TestApplyProposals:
     ) -> None:
         f = tmp_path / "a.md"
         f.write_text(f"{OLD}\n", encoding="utf-8")
-        modified = apply_proposals([_proposal(str(f), 99)])
-        assert modified == []
+        applied, modified = apply_proposals([_proposal(str(f), 99)])
+        assert (applied, modified) == (0, [])
         assert capsys.readouterr().err != ""
+
+    def test_applied_count_reports_writes_not_attempts(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # Line 1 rewrites; line 2 no longer holds the URL. The caller prints
+        # this count verbatim, so a proposal that silently failed must not be
+        # counted as applied.
+        f = tmp_path / "a.md"
+        f.write_text(f"{OLD}\nsomething else entirely\n", encoding="utf-8")
+        applied, modified = apply_proposals(
+            [_proposal(str(f), 1), _proposal(str(f), 2)]
+        )
+        assert (applied, modified) == (1, [str(f)])
+        capsys.readouterr()
 
     def test_unreadable_file_is_skipped_not_raised(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         missing = tmp_path / "gone.md"
-        modified = apply_proposals([_proposal(str(missing), 1)])
-        assert modified == []
+        applied, modified = apply_proposals([_proposal(str(missing), 1)])
+        assert (applied, modified) == (0, [])
         assert capsys.readouterr().err != ""
 
     def test_file_without_trailing_newline_keeps_not_having_one(
@@ -526,7 +541,7 @@ class TestApplyProposals:
         assert f.read_text(encoding="utf-8") == f"André está aquí {NEW}\n"
 
     def test_empty_proposal_list_writes_nothing(self) -> None:
-        assert apply_proposals([]) == []
+        assert apply_proposals([]) == (0, [])
 
     def test_no_temp_files_left_behind(self, tmp_path: Path) -> None:
         f = tmp_path / "a.md"

@@ -327,18 +327,26 @@ def _by_file(proposals: list[FixProposal]) -> dict[str, list[FixProposal]]:
     return grouped
 
 
-def apply_proposals(proposals: list[FixProposal]) -> list[str]:
-    """Apply auto-applicable proposals grouped by file; returns modified paths."""
+def apply_proposals(proposals: list[FixProposal]) -> tuple[int, list[str]]:
+    """Apply auto-applicable proposals grouped by file.
+
+    Returns (fixes written, modified paths). The count comes from the rewrite
+    itself, never from the proposal list: a proposal whose line no longer holds
+    its URL is skipped, and callers report this number to the user.
+    """
+    applied = 0
     modified: list[str] = []
     for source_file, file_proposals in _by_file(proposals).items():
         path = Path(source_file)
         lines = _read_lines(path)
         if lines is None:
             continue
-        if _rewrite(lines, file_proposals, warn=True):
+        written = _rewrite(lines, file_proposals, warn=True)
+        if written:
             _atomic_write(path, "\n".join(lines))
+            applied += written
             modified.append(source_file)
-    return modified
+    return applied, modified
 
 
 def render_diff(proposals: list[FixProposal]) -> str:

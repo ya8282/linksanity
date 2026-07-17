@@ -431,12 +431,11 @@ def fix(
         raise typer.Exit(1)
 
     _check_clean_tree(proposals, force)
-    modified = apply_proposals(proposals)
+    applied, modified = apply_proposals(proposals)
 
     if format == "json":
         _emit(_render_fix_output(proposals, format), output)
     else:
-        applied = sum(1 for p in proposals if p.auto_applicable)
         lines = (
             [f"Applied {applied} fix(es) across {len(modified)} file(s):"]
             + [f"  {m}" for m in modified]

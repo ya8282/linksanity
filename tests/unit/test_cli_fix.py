@@ -227,6 +227,13 @@ class TestWrite:
         assert str(doc) in result.output
         assert "Applied 1 fix" in result.output
 
+    def test_write_counts_only_fixes_that_landed(self, doc: Path) -> None:
+        # doc holds the URL on line 1 only; the line 2 proposal cannot apply.
+        # Reporting "Applied 2" would claim a write that never happened.
+        with _patch_proposals([_proposal(str(doc)), _proposal(str(doc), line=2)]):
+            result = runner.invoke(app, ["fix", str(doc), "--write"])
+        assert "Applied 1 fix" in result.output
+
     def test_write_never_applies_suggestions(self, doc: Path) -> None:
         original = doc.read_text(encoding="utf-8")
         p = _proposal(str(doc), auto_applicable=False)

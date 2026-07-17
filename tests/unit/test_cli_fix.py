@@ -289,6 +289,46 @@ class TestDirtyTreeGuard:
             result = runner.invoke(app, ["fix", str(repo_doc)])
         assert result.exit_code == 1
 
+    def test_dirty_tree_refuses_when_invoked_with_a_relative_path(
+        self, repo_doc: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Regression: a relative source_file plus git running from the target's
+        # own directory resolved the pathspec against the wrong base, so the
+        # guard saw a clean tree and wrote over uncommitted changes.
+        repo_doc.write_text(f"See [docs]({OLD}) here\nlocal edit\n", encoding="utf-8")
+        before = repo_doc.read_text(encoding="utf-8")
+        monkeypatch.chdir(repo_doc.parent)
+
+        with _patch_proposals([_proposal("a.md")]):
+            result = runner.invoke(app, ["fix", "a.md", "--write"])
+
+        assert result.exit_code == 2
+        assert "refusing to write" in result.output
+        assert repo_doc.read_text(encoding="utf-8") == before
+
+    def test_dirty_tree_refuses_from_a_subdirectory_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _git(tmp_path, "init", "-q")
+        _git(tmp_path, "config", "user.email", "t@example.com")
+        _git(tmp_path, "config", "user.name", "T")
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        f = docs / "index.md"
+        f.write_text(f"See [docs]({OLD}) here\n", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-q", "-m", "first")
+
+        f.write_text(f"See [docs]({OLD}) here\nlocal edit\n", encoding="utf-8")
+        before = f.read_text(encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        with _patch_proposals([_proposal("docs/index.md")]):
+            result = runner.invoke(app, ["fix", "./docs/", "--write"])
+
+        assert result.exit_code == 2
+        assert f.read_text(encoding="utf-8") == before
+
     def test_non_repo_proceeds_with_a_note(self, doc: Path) -> None:
         with _patch_proposals([_proposal(str(doc))]):
             result = runner.invoke(app, ["fix", str(doc), "--write"])

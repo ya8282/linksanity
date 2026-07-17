@@ -297,7 +297,11 @@ def _check_clean_tree(proposals: list[FixProposal], force: bool) -> None:
     targets = sorted({p.source_file for p in proposals if p.auto_applicable})
     if not targets:
         return
-    dirty = git_utils.is_dirty([Path(t) for t in targets], cwd=Path(targets[0]).parent)
+    # Resolve first: source_file is relative to the invocation cwd, but git runs
+    # from the target's own directory, which would resolve a relative pathspec
+    # against the wrong base and silently report a dirty tree as clean.
+    resolved = [Path(t).resolve() for t in targets]
+    dirty = git_utils.is_dirty(resolved, cwd=resolved[0].parent)
     if dirty is None:
         typer.echo(
             "[linksanity] not a git repository — writing without a dirty-tree check",

@@ -487,7 +487,12 @@ class TestApplyProposals:
         applied, modified = apply_proposals([_proposal(str(f), 1)])
         assert (applied, modified) == (0, [])
         assert f.read_text(encoding="utf-8") == "something else entirely\n"
-        assert "skipped" in capsys.readouterr().err.lower()
+        err = capsys.readouterr().err
+        assert "skipped" in err.lower()
+        # Reports the observed fact and a resolution step. It must not assert a
+        # cause it cannot know: a bad line number looks identical from here.
+        assert f"{OLD} is not on that line" in err
+        assert "re-run the scan" in err
 
     def test_line_number_past_end_of_file_is_skipped(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -496,7 +501,8 @@ class TestApplyProposals:
         f.write_text(f"{OLD}\n", encoding="utf-8")
         applied, modified = apply_proposals([_proposal(str(f), 99)])
         assert (applied, modified) == (0, [])
-        assert capsys.readouterr().err != ""
+        # Names the file's real length rather than blaming a stale scan.
+        assert "file has 2 line(s)" in capsys.readouterr().err
 
     def test_applied_count_reports_writes_not_attempts(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

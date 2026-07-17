@@ -296,11 +296,14 @@ def _rewrite(lines: list[str], proposals: list[FixProposal], *, warn: bool) -> i
     applied = 0
     for p in proposals:
         idx = p.line - 1
+        # State what was observed, not why. A stale scan is the likely cause,
+        # but a parser reporting the wrong line looks identical from here, and
+        # naming the wrong cause sends the reader looking in the wrong place.
         if idx < 0 or idx >= len(lines):
             if warn:
                 print(
-                    f"[linksanity] skipped {p.source_file}:{p.line} — line no longer "
-                    f"exists (file changed since scan)",
+                    f"[linksanity] skipped {p.source_file}:{p.line} — file has "
+                    f"{len(lines)} line(s); re-run the scan if the file has changed",
                     file=sys.stderr,
                 )
             continue
@@ -308,8 +311,8 @@ def _rewrite(lines: list[str], proposals: list[FixProposal], *, warn: bool) -> i
         if replaced is None:
             if warn:
                 print(
-                    f"[linksanity] skipped {p.source_file}:{p.line} — {p.old_url} not "
-                    f"found on that line (file changed since scan)",
+                    f"[linksanity] skipped {p.source_file}:{p.line} — {p.old_url} is "
+                    f"not on that line; re-run the scan if the file has changed",
                     file=sys.stderr,
                 )
             continue

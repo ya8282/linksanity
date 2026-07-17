@@ -27,6 +27,20 @@ def current_head(cwd: Path | None = None) -> str | None:
     return _run(["rev-parse", "HEAD"], cwd)
 
 
+def is_dirty(paths: list[Path], cwd: Path | None = None) -> bool | None:
+    """True if any of `paths` has uncommitted changes; None when not in a repo.
+
+    Used as the --write safety rail: rewriting a file with unstaged edits could
+    clobber them and makes the resulting diff unreviewable.
+    """
+    if repo_root(cwd) is None:
+        return None
+    out = _run(["status", "--porcelain", "--", *(str(p) for p in paths)], cwd)
+    if out is None:
+        return None
+    return bool(out)
+
+
 def changed_files(since: str, cwd: Path | None = None) -> set[Path] | None:
     """Return absolute paths changed between `since` and HEAD, or None if unavailable."""
     out = _run(["diff", "--name-only", since, "HEAD"], cwd)

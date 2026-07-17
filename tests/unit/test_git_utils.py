@@ -35,6 +35,9 @@ class TestOutsideRepo:
     def test_changed_files_none_outside_git(self, tmp_path: Path) -> None:
         assert git_utils.changed_files("HEAD", tmp_path) is None
 
+    def test_is_dirty_none_outside_git(self, tmp_path: Path) -> None:
+        assert git_utils.is_dirty([tmp_path / "a.md"], tmp_path) is None
+
 
 class TestInsideRepo:
     def test_repo_root_resolves(self, repo: Path) -> None:
@@ -63,3 +66,31 @@ class TestInsideRepo:
 
     def test_changed_files_bad_ref_returns_none(self, repo: Path) -> None:
         assert git_utils.changed_files("not-a-real-ref", repo) is None
+
+
+class TestIsDirty:
+    def test_clean_tree_is_not_dirty(self, repo: Path) -> None:
+        assert git_utils.is_dirty([repo / "a.md"], repo) is False
+
+    def test_uncommitted_edit_is_dirty(self, repo: Path) -> None:
+        (repo / "a.md").write_text("# A changed\n")
+        assert git_utils.is_dirty([repo / "a.md"], repo) is True
+
+    def test_staged_but_uncommitted_edit_is_dirty(self, repo: Path) -> None:
+        (repo / "a.md").write_text("# A changed\n")
+        _git(repo, "add", "a.md")
+        assert git_utils.is_dirty([repo / "a.md"], repo) is True
+
+    def test_untracked_file_elsewhere_does_not_dirty_our_paths(self, repo: Path) -> None:
+        # Only the files we are about to rewrite matter.
+        (repo / "unrelated.md").write_text("# new\n")
+        assert git_utils.is_dirty([repo / "a.md"], repo) is False
+
+    def test_dirty_is_scoped_to_the_given_paths(self, repo: Path) -> None:
+        (repo / "b.md").write_text("# B\n")
+        _git(repo, "add", "b.md")
+        _git(repo, "commit", "-q", "-m", "add b")
+        (repo / "b.md").write_text("# B changed\n")
+
+        assert git_utils.is_dirty([repo / "a.md"], repo) is False
+        assert git_utils.is_dirty([repo / "b.md"], repo) is True

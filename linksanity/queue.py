@@ -32,6 +32,7 @@ class LinkResult:
     resolved_url: str | None = None
     error: str | None = None
     redirect_chain: list[str] | None = None
+    redirect_codes: list[int] | None = None
     cell: int | None = None
 
 

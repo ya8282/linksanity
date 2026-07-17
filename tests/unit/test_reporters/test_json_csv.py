@@ -47,6 +47,17 @@ class TestJsonReporter:
         assert data[0]["http_code"] == 404
         assert data[0]["source_file"] == "docs/index.md"
 
+    def test_redirect_codes_serialized_as_list(self) -> None:
+        r = _result(LinkStatus.REDIRECT, http_code=200, redirect_codes=[301, 308])
+        buf = io.StringIO()
+        json_report([r], file=buf)
+        assert json.loads(buf.getvalue())[0]["redirect_codes"] == [301, 308]
+
+    def test_redirect_codes_null_when_absent(self) -> None:
+        buf = io.StringIO()
+        json_report([_result()], file=buf)
+        assert json.loads(buf.getvalue())[0]["redirect_codes"] is None
+
     def test_all_fields_present(self) -> None:
         r = _result(
             LinkStatus.REDIRECT,
@@ -141,6 +152,19 @@ class TestCsvReporter:
         assert rows[0]["http_code"] == ""
         assert rows[0]["resolved_url"] == ""
         assert rows[0]["error"] == ""
+
+    def test_redirect_codes_joined_with_semicolons(self) -> None:
+        r = _result(LinkStatus.REDIRECT, redirect_codes=[301, 308])
+        buf = io.StringIO()
+        csv_report([r], file=buf)
+        rows = list(csv.DictReader(io.StringIO(buf.getvalue())))
+        assert rows[0]["redirect_codes"] == "301;308"
+
+    def test_redirect_codes_empty_string_when_unset(self) -> None:
+        buf = io.StringIO()
+        csv_report([_result(LinkStatus.OK)], file=buf)
+        rows = list(csv.DictReader(io.StringIO(buf.getvalue())))
+        assert rows[0]["redirect_codes"] == ""
 
     def test_cell_column_present_in_header(self) -> None:
         buf = io.StringIO()

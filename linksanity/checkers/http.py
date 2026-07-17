@@ -144,11 +144,11 @@ async def _try_head(
         async with client.stream("GET", url) as stream_resp:
             code = stream_resp.status_code
             resolved = str(stream_resp.url)
-            history = [str(r.url) for r in stream_resp.history]
+            history = [(str(r.url), r.status_code) for r in stream_resp.history]
     else:
         code = resp.status_code
         resolved = str(resp.url)
-        history = [str(r.url) for r in resp.history]
+        history = [(str(r.url), r.status_code) for r in resp.history]
 
     return _make_result(url, source_file, line, link_type, code, resolved, history, cell)
 
@@ -160,13 +160,14 @@ def _make_result(
     link_type: LinkType,
     code: int,
     resolved_url: str,
-    history: list[str],
+    history: list[tuple[str, int]],
     cell: int | None = None,
 ) -> LinkResult:
     # With follow_redirects=True, httpx resolves the full chain.
     # A redirect is detected when the final URL differs from the original.
     was_redirected = resolved_url.rstrip("/") != url.rstrip("/")
-    chain = [*history, resolved_url] if was_redirected and history else None
+    chain = [*(u for u, _ in history), resolved_url] if was_redirected and history else None
+    codes = [c for _, c in history] if was_redirected and history else None
 
     if code >= 400:
         status = LinkStatus.BROKEN
@@ -184,6 +185,7 @@ def _make_result(
         http_code=code,
         resolved_url=resolved_url if was_redirected else None,
         redirect_chain=chain,
+        redirect_codes=codes,
         cell=cell,
     )
 

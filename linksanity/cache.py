@@ -52,6 +52,9 @@ class Cache:
             resolved_url=entry.get("resolved_url"),
             error=entry.get("error"),
             redirect_chain=entry.get("redirect_chain"),
+            # Entries written before redirect_codes existed degrade to None,
+            # which reads as "not known permanent" — suggestion-only, never auto-applied.
+            redirect_codes=entry.get("redirect_codes"),
         )
 
     def put(self, result: LinkResult) -> None:
@@ -64,6 +67,7 @@ class Cache:
             "resolved_url": result.resolved_url,
             "error": result.error,
             "redirect_chain": result.redirect_chain,
+            "redirect_codes": result.redirect_codes,
             "checked_at": time.time(),
         }
 

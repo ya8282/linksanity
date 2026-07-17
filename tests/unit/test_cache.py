@@ -38,6 +38,49 @@ class TestMissAndHit:
         assert hit.http_code == 200
 
 
+class TestRedirectCodes:
+    def test_redirect_codes_round_trip_through_disk(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.json"
+        cache = Cache(path, ttl=3600)
+        cache.put(_result(status=LinkStatus.REDIRECT, redirect_codes=[301, 308]))
+        cache.save()
+
+        hit = Cache(path, ttl=3600).get("https://example.com/page")
+        assert hit is not None
+        assert hit.redirect_codes == [301, 308]
+
+    def test_entry_written_before_the_field_existed_degrades_to_none(
+        self, tmp_path: Path
+    ) -> None:
+        # An 0.1.x cache file has no redirect_codes key. Reading it must not
+        # raise, and the result must not look like a permanent redirect.
+        path = tmp_path / "cache.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "urls": {
+                        "https://example.com/page": {
+                            "source_file": "docs/index.md",
+                            "line": 3,
+                            "link_type": "external",
+                            "status": "redirect",
+                            "http_code": 301,
+                            "resolved_url": "https://example.com/new",
+                            "error": None,
+                            "redirect_chain": ["https://example.com/page"],
+                            "checked_at": time.time(),
+                        }
+                    },
+                    "last_commit": None,
+                }
+            ),
+            encoding="utf-8",
+        )
+        hit = Cache(path, ttl=3600).get("https://example.com/page")
+        assert hit is not None
+        assert hit.redirect_codes is None
+
+
 class TestPersistence:
     def test_save_writes_json_file(self, tmp_path: Path) -> None:
         path = tmp_path / "cache.json"

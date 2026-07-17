@@ -23,6 +23,7 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
             "resolved_url": r.resolved_url,
             "error": r.error,
             "redirect_chain": r.redirect_chain,
+            "redirect_codes": r.redirect_codes,
         }
         for r in results
     ]

@@ -78,6 +78,61 @@ class TestStatusClassification:
         assert result.status == LinkStatus.BROKEN
 
 
+# ── Redirect status codes ─────────────────────────────────────────────────────
+
+class TestRedirectCodes:
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_permanent_chain_captures_both_301s(self) -> None:
+        mid_url = "https://example.com/mid"
+        final_url = "https://example.com/canonical"
+        respx.head(URL).mock(return_value=httpx.Response(301, headers={"location": mid_url}))
+        respx.head(mid_url).mock(return_value=httpx.Response(301, headers={"location": final_url}))
+        respx.head(final_url).mock(return_value=httpx.Response(200))
+        result = await check(URL, **make_kwargs())  # type: ignore[arg-type]
+        assert result.redirect_codes == [301, 301]
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_mixed_chain_preserves_hop_order(self) -> None:
+        mid_url = "https://example.com/mid"
+        final_url = "https://example.com/canonical"
+        respx.head(URL).mock(return_value=httpx.Response(301, headers={"location": mid_url}))
+        respx.head(mid_url).mock(return_value=httpx.Response(302, headers={"location": final_url}))
+        respx.head(final_url).mock(return_value=httpx.Response(200))
+        result = await check(URL, **make_kwargs())  # type: ignore[arg-type]
+        assert result.redirect_codes == [301, 302]
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_single_308(self) -> None:
+        final_url = "https://example.com/canonical"
+        respx.head(URL).mock(return_value=httpx.Response(308, headers={"location": final_url}))
+        respx.head(final_url).mock(return_value=httpx.Response(200))
+        result = await check(URL, **make_kwargs())  # type: ignore[arg-type]
+        assert result.redirect_codes == [308]
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_no_redirect_leaves_codes_none(self) -> None:
+        respx.head(URL).mock(return_value=httpx.Response(200))
+        result = await check(URL, **make_kwargs())  # type: ignore[arg-type]
+        assert result.redirect_codes is None
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_codes_parallel_chain_on_get_fallback_path(self) -> None:
+        # 405 on HEAD sends us down the streaming-GET branch, which builds
+        # history separately — it must capture codes too.
+        final_url = "https://example.com/canonical"
+        respx.head(URL).mock(return_value=httpx.Response(405))
+        respx.get(URL).mock(return_value=httpx.Response(301, headers={"location": final_url}))
+        respx.get(final_url).mock(return_value=httpx.Response(200))
+        result = await check(URL, **make_kwargs())  # type: ignore[arg-type]
+        assert result.redirect_chain == [URL, final_url]
+        assert result.redirect_codes == [301]
+
+
 # ── GET fallback on 405 ───────────────────────────────────────────────────────
 
 class TestGetFallback:

@@ -57,6 +57,7 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
                     resolved_url=cached.resolved_url,
                     error=cached.error,
                     redirect_chain=cached.redirect_chain,
+                    redirect_codes=cached.redirect_codes,
                     cell=cell,
                 )
             )

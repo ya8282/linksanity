@@ -53,6 +53,91 @@ def doc(tmp_path: Path) -> Path:
     return f
 
 
+# ── Flag plumbing ─────────────────────────────────────────────────────────────
+
+class TestConfigPlumbing:
+    def test_flags_reach_the_scan_config(self, doc: Path, tmp_path: Path) -> None:
+        captured: dict[str, object] = {}
+
+        async def fake(
+            paths: list[str], config: object, redirects: str, wayback: bool
+        ) -> list[FixProposal]:
+            captured.update(
+                paths=paths, config=config, redirects=redirects, wayback=wayback
+            )
+            return []
+
+        cache_file = tmp_path / "cache.json"
+        with patch("linksanity.cli._collect_proposals", new=fake):
+            result = runner.invoke(app, [
+                "fix", str(doc),
+                "--workers", "3",
+                "--timeout", "7",
+                "--retry", "1",
+                "--check-anchors",
+                "--check-images",
+                "--link-style", "mkdocs",
+                "--cache", str(cache_file),
+                "--cache-ttl", "60",
+                "--redirects", "all",
+                "--wayback",
+            ])
+
+        assert result.exit_code == 0, result.output
+        config = captured["config"]
+        assert config.workers == 3           # type: ignore[attr-defined]
+        assert config.timeout == 7           # type: ignore[attr-defined]
+        assert config.retry == 1             # type: ignore[attr-defined]
+        assert config.check_anchors is True  # type: ignore[attr-defined]
+        assert config.check_images is True   # type: ignore[attr-defined]
+        assert config.link_style == "mkdocs"  # type: ignore[attr-defined]
+        assert config.cache_file == str(cache_file)  # type: ignore[attr-defined]
+        assert config.cache_ttl == 60        # type: ignore[attr-defined]
+        assert captured["redirects"] == "all"
+        assert captured["wayback"] is True
+        assert captured["paths"] == [str(doc)]
+
+    def test_domain_files_reach_the_config(self, doc: Path, tmp_path: Path) -> None:
+        captured: dict[str, object] = {}
+
+        async def fake(
+            paths: list[str], config: object, redirects: str, wayback: bool
+        ) -> list[FixProposal]:
+            captured["config"] = config
+            return []
+
+        ignore = tmp_path / "ignore.txt"
+        ignore.write_text("skipme.example.com\n", encoding="utf-8")
+        skip = tmp_path / "skip.txt"
+        skip.write_text("https://auth.example.com/*\n", encoding="utf-8")
+
+        with patch("linksanity.cli._collect_proposals", new=fake):
+            runner.invoke(app, [
+                "fix", str(doc),
+                "--ignore-domains", str(ignore),
+                "--skip-urls", str(skip),
+            ])
+
+        config = captured["config"]
+        assert config.ignore_domains == {"skipme.example.com"}       # type: ignore[attr-defined]
+        assert config.skip_urls == {"https://auth.example.com/*"}    # type: ignore[attr-defined]
+
+    def test_defaults_are_dry_run_and_permanent_only(self, doc: Path) -> None:
+        captured: dict[str, object] = {}
+
+        async def fake(
+            paths: list[str], config: object, redirects: str, wayback: bool
+        ) -> list[FixProposal]:
+            captured.update(redirects=redirects, wayback=wayback)
+            return []
+
+        with patch("linksanity.cli._collect_proposals", new=fake):
+            runner.invoke(app, ["fix", str(doc)])
+
+        assert captured["redirects"] == "permanent"
+        assert captured["wayback"] is False
+
+
 # ── Invocation errors (exit 2) ────────────────────────────────────────────────
 
 class TestInvocationErrors:

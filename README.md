@@ -20,6 +20,7 @@ ok=38   broken=1   redirect=1   skipped=0
 
 - **Static scan** — parse 8 file formats (see Supported formats below) without a browser
 - **Live crawl** — follow links on a deployed site using a headless browser (Playwright)
+- **Fix, don't just report** — `linksanity fix` rewrites permanently-redirected URLs and moved-file links in place (see [Fixing broken links](#fixing-broken-links))
 - **Exit codes** — `0` = clean, `1` = broken links found (ideal for CI)
 - **Multiple formats** — console (Rich), JSON, CSV; optional Markdown summary report
 - **Anchor validation** — opt-in `--check-anchors` flag
@@ -269,6 +270,55 @@ permissions:
   issues: write
 ```
 
+## Fixing broken links
+
+Most checkers stop at a red ✗. `linksanity fix` takes the next step: it scans, works out which breakages it can repair, and shows you a diff.
+
+```bash
+# Dry run — prints a unified diff, changes nothing
+linksanity fix ./docs/
+
+# Apply the fixes it is confident about
+linksanity fix ./docs/ --write
+```
+
+**Dry run is the default. Files are only ever touched under `--write`.**
+
+### What it will and won't fix
+
+| Class | Trigger | Confidence | Applied by `--write`? |
+|---|---|---|---|
+| `redirect` | Every hop in the chain is a 301 or 308 | High — the server itself declares the new canonical URL | **Yes** |
+| `moved_file` | A broken relative link whose basename matches exactly one file in the corpus | Medium — inferred from the file tree | **Yes**, unique match only |
+| `wayback` | A dead external link (404/410) with an Internet Archive snapshot | Low — a judgment call | **Never** — suggested only |
+
+Anything ambiguous is reported, never guessed:
+
+- A **temporary** redirect (302/307, or a chain mixing permanent and temporary hops) is only a suggestion. Pass `--redirects all` if you want those applied too.
+- **Two files** named `config.md` means no auto-fix — both are listed so you can pick.
+- **No basename match** falls back to close-name suggestions.
+- An **archive snapshot** is never substituted for you.
+
+### Safety
+
+Rewriting source files is the one thing linksanity does that you can't undo with a re-run, so:
+
+- **Dry run by default** — `--write` is opt-in.
+- **Clean tree required** — `--write` refuses if the files it would rewrite have uncommitted changes, which it could otherwise clobber. Commit or stash first, or pass `--force`. Outside a git repo it proceeds with a note.
+- **Line-scoped edits** — only the exact line the link was found on is touched, and a URL that is a prefix of a longer URL on that line is left alone.
+- **Atomic writes** — a crash mid-fix can't leave a truncated file.
+- **Stale scans are safe** — if a file changed since the scan and the URL is no longer on its recorded line, that fix is skipped with a warning rather than applied blind.
+
+### Format support
+
+`fix` rewrites `.md`, `.rst`, `.html`, and `.htm`. Links in other scanned formats are still reported, but as suggestions you apply yourself.
+
+`.ipynb` is deliberately excluded: notebook results carry line numbers *within a cell*, so a file-level rewrite would corrupt an unrelated line.
+
+### A note on caches
+
+Redirect permanence comes from status codes recorded during the check. Entries cached by linksanity 0.1.x predate that field, so redirects resolved from an old cache are treated as suggestions rather than auto-fixes. Clear the cache, or wait for the TTL, after upgrading.
+
 ## Use with AI agents
 
 linksanity is designed to be a clean tool call for AI agents. Use `--format json` so an agent can parse structured output without screen-scraping console text.
@@ -292,18 +342,75 @@ Each item in the output array has:
 ```json
 [
   {
-    "url": "https://example.com/old",
     "source_file": "docs/guide.md",
     "line": 42,
-    "status": "broken",
-    "status_code": 404,
-    "redirect_url": null,
-    "error": null
+    "cell": null,
+    "url": "https://example.com/old",
+    "link_type": "external",
+    "status": "redirect",
+    "http_code": 200,
+    "resolved_url": "https://example.com/new",
+    "error": null,
+    "redirect_chain": ["https://example.com/old", "https://example.com/new"],
+    "redirect_codes": [301]
   }
 ]
 ```
 
-`status` is one of `"ok"`, `"broken"`, `"redirect"`, `"skipped"`, or `"error"`.
+| Key | Meaning |
+|---|---|
+| `status` | `"ok"`, `"broken"`, `"redirect"`, `"too_many_redirects"`, `"skipped"`, or `"error"` |
+| `link_type` | `"external"`, `"internal"`, `"anchor"`, `"external_anchor"`, or `"non_http_scheme"` |
+| `http_code` | Final HTTP status, or `null` for links that were never fetched |
+| `resolved_url` | Final URL after redirects; `null` when there was no redirect |
+| `cell` | Notebook cell index for `.ipynb` sources; `null` otherwise. **`line` is relative to the cell, not the file** |
+| `redirect_chain` | Every URL in the chain, original first; `null` when there was no redirect |
+| `redirect_codes` | The status code of each hop, parallel to `redirect_chain`'s hops. All 301/308 means permanently moved and safe to rewrite. `null` for cached results written before linksanity 0.2.0 |
+
+### Repair loop
+
+`linksanity fix --format json` emits fix proposals rather than link results, which lets an agent apply the mechanical repairs and escalate only the judgment calls:
+
+```bash
+linksanity fix ./docs/ --format json --output fixes.json
+```
+
+```json
+[
+  {
+    "source_file": "docs/a.md",
+    "line": 12,
+    "old_url": "http://old.example.com/x",
+    "new_url": "https://new.example.com/x",
+    "kind": "redirect",
+    "auto_applicable": true,
+    "detail": "301 → https://new.example.com/x"
+  }
+]
+```
+
+| Key | Meaning |
+|---|---|
+| `kind` | `"redirect"`, `"moved_file"`, or `"wayback"` |
+| `auto_applicable` | `true` = linksanity will apply it under `--write`. `false` = it needs a human |
+| `detail` | Why this was proposed — worth surfacing verbatim when escalating |
+
+The loop:
+
+1. `linksanity fix ./docs/ --format json --output fixes.json` — exit `0` means nothing to fix, and you're done.
+2. Apply the safe ones: `linksanity fix ./docs/ --write`.
+3. Escalate the rest. Every proposal with `auto_applicable: false` is a decision, not a defect: which of two `config.md` files was meant, whether a 302 is permanent enough to bake in, whether an archive snapshot is an acceptable substitute for a dead link. Present `old_url`, `new_url`, and `detail`, and let the human choose.
+4. Re-run `linksanity scan ./docs/` to confirm the fixes landed.
+
+An example prompt for step 3:
+
+> These links are broken and I couldn't repair them safely. For each one, tell me which replacement to use, or say "leave it":
+> `{paste the auto_applicable: false proposals}`
+
+Two things worth building into an agent that drives `--write`:
+
+- **Commit first.** `--write` refuses on a dirty tree by design. Don't reach for `--force` to get around that — the guard is what makes the resulting `git diff` reviewable.
+- **Show the diff.** `fix` without `--write` is a safe read-only preview; use it to let a human approve before you write.
 
 ### Python subprocess usage
 
@@ -395,6 +502,21 @@ Read results.json and summarise which links are broken and why they might have r
 | `--annotations` / `--no-annotations` | auto-detect | Emit GitHub Actions `::error`/`::warning` annotations (auto-enabled in Actions unless writing JSON/CSV to bare stdout) |
 | `--offline` | off | Skip external HTTP checks, reporting them as `skipped`; doesn't touch the cache |
 
+### `linksanity fix <paths...>`
+
+Takes local paths only — `fix` rewrites the file a link lives in, which a crawled URL doesn't have. Passing a URL exits `2`.
+
+Reuses the `scan` flags that affect what gets checked (`--config`, `--workers`, `--timeout`, `--retry`, `--check-anchors`, `--check-images`, `--link-style`, `--ignore-domains`, `--skip-urls`, `--cache`, `--cache-ttl`), plus:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--write` | off | Apply auto-applicable fixes. Without it, `fix` only prints a diff |
+| `--force` | off | Write even when the files to fix have uncommitted changes |
+| `--redirects` | permanent | `permanent` (301/308 only) or `all` (also apply 302/307) |
+| `--wayback` | off | Also suggest archive.org snapshots for dead external links |
+| `--format` | console | `console` (diff) or `json` (proposals) |
+| `--output FILE` | stdout | Write proposals to a file |
+
 ### `linksanity crawl <url>`
 
 Same flags as `scan`, minus `--check-anchors`, `--js-domains`, and `--offline`, plus:
@@ -429,11 +551,21 @@ skip_urls = [
 
 ## Exit codes
 
+For `scan` and `crawl`:
+
 | Code | Meaning |
 |---|---|
 | `0` | All links OK (or only redirects/skipped) |
 | `1` | One or more broken links |
 | `2` | Invocation error (bad arguments, missing file) |
+
+For `fix`:
+
+| Code | Meaning |
+|---|---|
+| `0` | Nothing to fix |
+| `1` | Proposals exist (dry run), or were applied (`--write`) |
+| `2` | Invocation error, or `--write` refused a dirty working tree |
 
 ## Development
 

@@ -6,6 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+# These tests mock the browser but still need the `playwright` package importable
+# (patch targets + `from playwright.async_api import ...` inside check()). The
+# no-browser CI job installs without the `browser` extra, so skip there; the
+# test-browser job runs them.
+pytest.importorskip("playwright")
+
 from linksanity.checkers.playwright import check
 from linksanity.queue import LinkStatus, LinkType
 

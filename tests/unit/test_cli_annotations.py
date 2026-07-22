@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,8 @@ from linksanity.cli import _annotations_enabled, app
 from linksanity.config import Config
 
 runner = CliRunner()
+
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 # ── _annotations_enabled truth table ────────────────────────────────────────
@@ -184,5 +187,6 @@ class TestCrawlAnnotationsFlagParsing:
     def test_annotations_flag_does_not_break_help(self) -> None:
         result = runner.invoke(app, ["crawl", "--help"])
         assert result.exit_code == 0
-        assert "--annotations" in result.output
-        assert "--no-annotations" in result.output
+        output = _ANSI_ESCAPE.sub("", result.output)
+        assert "--annotations" in output
+        assert "--no-annotations" in output

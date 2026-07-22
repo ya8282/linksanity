@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 from pathlib import Path
 
 import httpx
@@ -20,6 +21,8 @@ from linksanity.scanner import run_scan
 DOCS_DIR = Path(__file__).parent.parent / "fixtures" / "docs"
 
 runner = CliRunner()
+
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 class TestScanExitCodes:
@@ -239,7 +242,7 @@ class TestScanOfflineFlag:
     def test_offline_flag_present_in_scan_help(self) -> None:
         result = runner.invoke(app, ["scan", "--help"])
         assert result.exit_code == 0
-        assert "--offline" in result.output
+        assert "--offline" in _ANSI_ESCAPE.sub("", result.output)
 
     def test_offline_flag_absent_from_crawl_help(self) -> None:
         result = runner.invoke(app, ["crawl", "--help"])

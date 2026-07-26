@@ -1,0 +1,17 @@
+# Case-study targets for linksanity.
+#
+# Selection criteria:
+#   - Popular/recognizable OSS projects (well-known to a broad developer audience).
+#   - Documentation is markdown- or rst-heavy and kept in-repo (no external docs-only repo).
+#   - Shallow clone (`git clone --depth 1`) is well under ~100MB.
+#   - The docs subpath below exists at HEAD and contains .md/.rst/.mdx files.
+#
+# Each entry was verified by shallow-cloning the repo and checking the docs
+# subpath for markdown/rst content (see bead linksanity-rkb.2 for evidence).
+#
+# Format: <slug> <git-url> <docs-subpath>
+fastapi https://github.com/fastapi/fastapi.git docs/en/docs
+pydantic https://github.com/pydantic/pydantic.git docs
+typer https://github.com/fastapi/typer.git docs
+requests https://github.com/psf/requests.git docs
+rich https://github.com/Textualize/rich.git docs

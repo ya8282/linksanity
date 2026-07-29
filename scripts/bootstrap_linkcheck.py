@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""Generate a GitHub Actions link-check workflow file for a target repo.
+
+Usage:
+    python scripts/bootstrap_linkcheck.py --url https://example.com [options]
+    python scripts/bootstrap_linkcheck.py --repo ../some-other-repo --yes \\
+        --url https://example.com --schedule "0 8 * * 1" --max-pages 200
+
+Writes a `.github/workflows/<name>.yml` file into --repo (default: the
+current directory) that runs `linksanity crawl <url>` on a schedule via
+GitHub Actions, following the same pattern as the hand-written workflow
+originally committed to ya8282/resume for https://chrischo.org.
+
+Without --yes, prompts interactively via input() for any option not
+supplied on the command line, showing the default in brackets. Pass --yes
+to skip all prompting and use CLI values or defaults; --url then becomes
+required since it has no sensible default.
+
+stdlib only; no third-party dependencies.
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+DEFAULT_SCHEDULE = "0 8 * * 1"
+DEFAULT_MAX_PAGES = 200
+DEFAULT_WORKFLOW_NAME = "linkcheck.yml"
+
+_TRUTHY = {"y", "yes", "true", "1"}
+
+
+def ask(prompt: str, default: str) -> str:
+    """Prompt via input(), returning `default` on an empty (Enter-only) response."""
+    response = input(f"{prompt} [{default}]: ").strip()
+    return response if response else default
+
+
+def render_workflow(
+    *,
+    url: str,
+    schedule: str,
+    max_pages: int,
+    check_anchors: bool,
+    block_analytics: bool,
+) -> str:
+    """Render the GitHub Actions workflow YAML as a plain string.
+
+    No YAML library is used -- this file's structure is fixed and simple
+    enough that an f-string is clearer and dependency-free.
+    """
+    crawl_lines = [f"          linksanity crawl {url} \\"]
+    if check_anchors:
+        crawl_lines.append("            --check-anchors \\")
+    if block_analytics:
+        crawl_lines.append("            --block-analytics \\")
+    crawl_lines.append(f"            --max-pages {max_pages} \\")
+    crawl_lines.append("            --format json \\")
+    crawl_lines.append("            --output crawl-results.json")
+    crawl_step = "\n".join(crawl_lines)
+
+    return f"""# Crawls {url} and fails the job if any link is broken.
+name: Link check
+
+on:
+  workflow_dispatch:        # manual "Run workflow" button
+  schedule:
+    - cron: "{schedule}"
+
+permissions:
+  contents: read
+
+jobs:
+  linkcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4   # only needed if you keep a .linksanity-skip file in the repo
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install linksanity
+        run: |
+          pip install "linksanity[browser]"
+          playwright install --with-deps chromium
+
+      - name: Crawl {url}
+        run: |
+{crawl_step}
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linkcheck-results
+          path: crawl-results.json
+"""
+
+
+def _git_commit(repo_path: Path, target_path: Path) -> None:
+    """Stage and commit the generated workflow file. Never pushes."""
+    rel_path = target_path.relative_to(repo_path)
+
+    add = subprocess.run(
+        ["git", "add", str(rel_path)], cwd=repo_path, capture_output=True, text=True
+    )
+    if add.returncode != 0:
+        print(f"error: git add failed:\n{add.stderr}", file=sys.stderr)
+        sys.exit(1)
+
+    commit = subprocess.run(
+        ["git", "commit", "-m", f"Add link-check GitHub Actions workflow ({rel_path})"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
+    if commit.returncode != 0:
+        print(f"error: git commit failed:\n{commit.stderr}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"committed {rel_path}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    doc_lines = __doc__.splitlines() if __doc__ else []
+    parser = argparse.ArgumentParser(
+        description=doc_lines[0] if doc_lines else None,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(doc_lines[1:]).strip() if len(doc_lines) > 1 else None,
+    )
+    parser.add_argument(
+        "--repo",
+        default=".",
+        help="Target repository root to install the workflow into (default: '.')",
+    )
+    parser.add_argument(
+        "--url",
+        default=None,
+        help="Site URL to crawl (no default; required when --yes is passed)",
+    )
+    parser.add_argument(
+        "--schedule",
+        default=None,
+        help=f"Cron expression for the scheduled trigger (default: {DEFAULT_SCHEDULE!r})",
+    )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help=f"Max pages passed to `linksanity crawl --max-pages` (default: {DEFAULT_MAX_PAGES})",
+    )
+    parser.add_argument(
+        "--check-anchors",
+        dest="check_anchors",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="Include --check-anchors in the crawl step (default: true)",
+    )
+    parser.add_argument(
+        "--block-analytics",
+        dest="block_analytics",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="Include --block-analytics in the crawl step (default: true)",
+    )
+    parser.add_argument(
+        "--workflow-name",
+        default=None,
+        help=f"Workflow filename, without directory (default: {DEFAULT_WORKFLOW_NAME!r})",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite the workflow file if it already exists at the target path",
+    )
+    parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Skip all interactive prompting; use CLI values or defaults (requires --url)",
+    )
+    parser.add_argument(
+        "--commit",
+        action="store_true",
+        help="After writing the file, `git add` and `git commit` it inside --repo (never pushes)",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.yes:
+        if not args.url:
+            print("error: --url is required when --yes is passed", file=sys.stderr)
+            return 2
+        url = args.url
+        schedule = args.schedule if args.schedule is not None else DEFAULT_SCHEDULE
+        max_pages = args.max_pages if args.max_pages is not None else DEFAULT_MAX_PAGES
+        check_anchors = args.check_anchors if args.check_anchors is not None else True
+        block_analytics = args.block_analytics if args.block_analytics is not None else True
+        workflow_name = args.workflow_name if args.workflow_name is not None else DEFAULT_WORKFLOW_NAME
+    else:
+        url = args.url if args.url is not None else ask("Site URL to crawl", "")
+        if not url:
+            print("error: --url is required", file=sys.stderr)
+            return 2
+
+        schedule = args.schedule if args.schedule is not None else ask("Cron schedule", DEFAULT_SCHEDULE)
+
+        if args.max_pages is not None:
+            max_pages = args.max_pages
+        else:
+            max_pages_str = ask("Max pages", str(DEFAULT_MAX_PAGES))
+            try:
+                max_pages = int(max_pages_str)
+            except ValueError:
+                print(f"error: max pages must be an integer, got {max_pages_str!r}", file=sys.stderr)
+                return 2
+
+        if args.check_anchors is not None:
+            check_anchors = args.check_anchors
+        else:
+            check_anchors = ask("Check anchors? (yes/no)", "yes").strip().lower() in _TRUTHY
+
+        if args.block_analytics is not None:
+            block_analytics = args.block_analytics
+        else:
+            block_analytics = ask("Block analytics? (yes/no)", "yes").strip().lower() in _TRUTHY
+
+        workflow_name = (
+            args.workflow_name
+            if args.workflow_name is not None
+            else ask("Workflow filename", DEFAULT_WORKFLOW_NAME)
+        )
+
+    repo_path = Path(args.repo)
+    workflow_dir = repo_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True, exist_ok=True)
+    target_path = workflow_dir / workflow_name
+
+    if target_path.exists() and not args.force:
+        print(
+            f"error: {target_path} already exists; pass --force to overwrite",
+            file=sys.stderr,
+        )
+        return 1
+
+    yaml_text = render_workflow(
+        url=url,
+        schedule=schedule,
+        max_pages=max_pages,
+        check_anchors=check_anchors,
+        block_analytics=block_analytics,
+    )
+    target_path.write_text(yaml_text, encoding="utf-8")
+    print(f"wrote workflow to {target_path}")
+
+    if args.commit:
+        _git_commit(repo_path, target_path)
+    else:
+        rel_path = target_path.relative_to(repo_path) if target_path.is_relative_to(repo_path) else target_path
+        print("Next steps:")
+        print(f"  cd {repo_path}")
+        print(f"  git add {rel_path}")
+        print('  git commit -m "Add link-check workflow"')
+        print("  git push")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

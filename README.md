@@ -211,6 +211,21 @@ https://internal.corp.example.com/*
             --output crawl-results.json
 ```
 
+**Generate this workflow automatically** — `scripts/bootstrap_linkcheck.py` writes a full `.github/workflows/linkcheck.yml` (the crawl variant above) into any target repo, prompting for anything not passed as a flag:
+
+```bash
+# Fully interactive — prompts for URL, schedule, max-pages, etc.
+python scripts/bootstrap_linkcheck.py --repo ../some-site
+
+# Non-interactive, all options via flags
+python scripts/bootstrap_linkcheck.py --repo ../some-site --yes \
+  --url https://example.com \
+  --schedule "0 8 * * 1" \
+  --max-pages 200
+```
+
+`--force` overwrites an existing workflow file of the same name; `--commit` stages and commits the generated file locally (never pushes). Run `python scripts/bootstrap_linkcheck.py --help` for the full option list.
+
 </details>
 
 ### Pre-commit hook

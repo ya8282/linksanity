@@ -23,8 +23,8 @@ pytest tests/integration/ # integration tests (browser optional)
 ## Code quality
 
 ```bash
-ruff check linksanity/ tests/ --fix   # lint + auto-fix
-mypy linksanity/                      # type check (strict mode)
+ruff check linksanity/ tests/ scripts/ --fix   # lint + auto-fix
+mypy linksanity/                               # type check (strict mode)
 ```
 
 Both must pass before opening a PR.

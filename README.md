@@ -668,7 +668,7 @@ playwright install chromium
 pytest
 
 # Lint + type check
-ruff check linksanity/ tests/
+ruff check linksanity/ tests/ scripts/
 mypy linksanity/
 ```
 

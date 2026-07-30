@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
-from case_study import _render  # noqa: E402
+import case_study  # noqa: E402
+from case_study import _render, _run_fix_dry_run  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "case_study.py"
@@ -90,3 +95,62 @@ def test_render_reports_count_when_auto_fixable_is_int() -> None:
 
     assert "3 link(s) could be auto-fixed by `linksanity fix --write`." in markdown
     assert "Could not determine" not in markdown
+
+
+def _fake_run(returncode: int, stdout: str):
+    def _run(cmd: list[str], **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(returncode=returncode, stdout=stdout, stderr="")
+
+    return _run
+
+
+def test_run_fix_dry_run_unexpected_exit_code_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(case_study.subprocess, "run", _fake_run(2, "[]"))
+
+    result = _run_fix_dry_run(Path("unused"))
+
+    assert result is None
+
+
+def test_run_fix_dry_run_empty_stdout_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(case_study.subprocess, "run", _fake_run(0, "   "))
+
+    result = _run_fix_dry_run(Path("unused"))
+
+    assert result is None
+
+
+def test_run_fix_dry_run_invalid_json_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(case_study.subprocess, "run", _fake_run(0, "not valid json"))
+
+    result = _run_fix_dry_run(Path("unused"))
+
+    assert result is None
+
+
+def test_run_fix_dry_run_nothing_to_fix_is_genuine_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        case_study.subprocess, "run", _fake_run(0, "[linksanity] nothing to fix\n")
+    )
+
+    result = _run_fix_dry_run(Path("unused"))
+
+    assert result is not None
+    assert result == 0
+
+
+def test_run_fix_dry_run_valid_json_returns_auto_applicable_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proposals = [
+        {"auto_applicable": True},
+        {"auto_applicable": True},
+        {"auto_applicable": False},
+        {"auto_applicable": True},
+    ]
+    monkeypatch.setattr(case_study.subprocess, "run", _fake_run(0, json.dumps(proposals)))
+
+    result = _run_fix_dry_run(Path("unused"))
+
+    assert result is not None
+    assert result == 3

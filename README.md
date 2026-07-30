@@ -39,7 +39,7 @@ linksanity is modular — install only what you need for your use case.
 | **Fixer** | already included | `linksanity fix ./docs/` (dry run; add `--write` to apply) | [Fixing broken links](#fixing-broken-links) |
 | **Browser crawl** | `pip install "linksanity[browser]"` then `playwright install chromium` | `linksanity crawl https://docs.example.com` | [Crawl a live site](#crawl-a-live-site) |
 | **Pre-commit hook** | already included; add to `.pre-commit-config.yaml` | `repo: https://github.com/ya8282/linksanity`, `rev: v0.2.0`, `hooks: [{id: linksanity}]` | [Pre-commit hook](#pre-commit-hook) |
-| **GitHub Action** | none — no local install needed | `- uses: ya8282/linksanity-action@v1` with `paths: docs/` | [CI integration](#ci-integration) — see the `ya8282/linksanity-action` repo |
+| **GitHub Action** | none — no local install needed | `- uses: ya8282/linksanity-action@v1` with `paths: docs/` | [CI integration](#ci-integration) — see the [ya8282/linksanity-action](https://github.com/ya8282/linksanity-action) repo |
 | **Library API** | `pip install linksanity` | `from linksanity import scan_paths` | [Use as a library](#use-as-a-library) (note: no `./linksanity.toml` auto-discovery, unlike the CLI) |
 
 ## Supported formats
@@ -119,7 +119,7 @@ linksanity crawl https://docs.example.com --ignore-domains ignore.txt
 
 ### CI integration
 
-The fastest way to add link checking to CI is the `ya8282/linksanity-action` composite action — one line beyond checkout:
+The fastest way to add link checking to CI is the [ya8282/linksanity-action](https://github.com/ya8282/linksanity-action) composite action — one line beyond checkout:
 
 ```yaml
 # .github/workflows/linkcheck.yml

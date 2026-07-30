@@ -8,6 +8,7 @@ from operator import attrgetter
 from typing import IO
 
 from rich.console import Console
+from rich.markup import escape
 
 from linksanity.queue import LinkResult, LinkStatus
 
@@ -43,7 +44,7 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
         by_file = sorted(notable, key=attrgetter("source_file", "line"))
         for source_file, group_iter in groupby(by_file, key=attrgetter("source_file")):
             console.print()
-            console.print(f"[bold]{source_file}[/bold]")
+            console.print(f"[bold]{escape(source_file)}[/bold]")
             for r in group_iter:
                 label, style = _LABEL[r.status]
                 if r.cell is not None:
@@ -52,7 +53,7 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
                     line_col = f"line {r.line:>4}"
                 detail = _detail(r)
                 console.print(
-                    f"  [{style}]{label}[/{style}]  {line_col}  {r.url}{detail}"
+                    f"  [{style}]{label}[/{style}]  {line_col}  {escape(r.url)}{detail}"
                 )
 
     counts: dict[LinkStatus, int] = {s: 0 for s in LinkStatus}
@@ -83,12 +84,13 @@ def _detail(r: LinkResult) -> str:
     if r.status == LinkStatus.REDIRECT:
         suffix = f" [{r.http_code}]" if r.http_code else ""
         if r.redirect_chain:
-            return f" → {' → '.join(r.redirect_chain)}{suffix}"
-        return f" → {r.resolved_url}{suffix}"
+            chain = " → ".join(escape(u) for u in r.redirect_chain)
+            return f" → {chain}{suffix}"
+        return f" → {escape(r.resolved_url or '')}{suffix}"
     if r.status == LinkStatus.TOO_MANY_REDIRECTS:
-        return f" — {r.error}"
+        return f" — {escape(r.error or '')}"
     if r.http_code and r.http_code >= 400:
         return f" [{r.http_code}]"
     if r.error:
-        return f" — {r.error}"
+        return f" — {escape(r.error)}"
     return ""

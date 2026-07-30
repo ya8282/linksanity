@@ -67,6 +67,20 @@ class TestBroken:
         out = _capture([r])
         assert "connection refused" in out
 
+    def test_bracketed_error_text_not_mangled_as_markup(self) -> None:
+        # Regression: "[browser]" in error text was previously eaten by Rich
+        # as console markup (e.g. a style tag), silently dropping it from the
+        # rendered output. See linksanity-2ie.
+        r = _result(
+            LinkStatus.ERROR,
+            error=(
+                "ImportError: Playwright is not installed. "
+                "Run: pip install linksanity[browser] && playwright install chromium"
+            ),
+        )
+        out = _capture([r])
+        assert "[browser]" in out
+
     def test_line_number_appears(self) -> None:
         r = _result(LinkStatus.BROKEN, line=42, http_code=404)
         out = _capture([r])
@@ -102,6 +116,14 @@ class TestRedirect:
         )
         out = _capture([r])
         assert "new.example.com" in out
+
+    def test_bracketed_resolved_url_not_mangled_as_markup(self) -> None:
+        r = _result(
+            LinkStatus.REDIRECT,
+            resolved_url="https://example.com/[browser]/path",
+        )
+        out = _capture([r])
+        assert "[browser]" in out
 
 
 # ── OK and skipped are silent ─────────────────────────────────────────────────
@@ -139,6 +161,22 @@ class TestGrouping:
         out = _capture(results)
         # "a.md" appears as header — count occurrences (should be 1 group header)
         assert out.count("a.md") >= 1
+
+    def test_bracketed_source_file_not_mangled_as_markup(self) -> None:
+        # Regression: a literal "[" in the source file heading was previously
+        # interpreted as Rich console markup, silently dropping the bracketed
+        # text from the rendered output. See linksanity-2ie.
+        r = _result(
+            LinkStatus.BROKEN,
+            source_file="docs/notes [draft].md",
+            http_code=404,
+        )
+        out = _capture([r])
+        assert "[draft]" in out
+        # The intentional [bold]/[/bold] styling markup around the heading
+        # is still consumed by Rich (not printed literally).
+        assert "[bold]" not in out
+        assert "[/bold]" not in out
 
 
 # ── Summary line ──────────────────────────────────────────────────────────────

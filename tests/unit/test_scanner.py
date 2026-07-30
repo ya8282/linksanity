@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -252,6 +253,71 @@ class TestIncremental:
 
         assert mock_dispatch.await_count == 1
         assert "could not diff" in capsys.readouterr().err
+
+
+class TestDispatchExceptionHandling:
+    """cmd.2 safety net: dispatch() exceptions surfaced via gather(return_exceptions=True)
+    become ERROR results, but non-Exception BaseExceptions (e.g. cancellation) must not
+    be silently swallowed."""
+
+    @pytest.mark.asyncio
+    async def test_exception_converted_to_error_result_with_type_name(
+        self, tmp_path: Path
+    ) -> None:
+        doc = tmp_path / "index.md"
+        doc.write_text("[link](https://example.com)\n")
+        config = Config()
+
+        with patch(
+            "linksanity.scanner.dispatch", new=AsyncMock(side_effect=ValueError("boom"))
+        ):
+            queue = await run_scan([str(doc)], config)
+
+        result = queue.results()[0]
+        assert result.status == LinkStatus.ERROR
+        assert result.error == "ValueError: boom"
+
+    @pytest.mark.asyncio
+    async def test_exception_with_empty_message_still_diagnosable(
+        self, tmp_path: Path
+    ) -> None:
+        doc = tmp_path / "index.md"
+        doc.write_text("[link](https://example.com)\n")
+        config = Config()
+
+        with patch(
+            "linksanity.scanner.dispatch", new=AsyncMock(side_effect=RuntimeError())
+        ):
+            queue = await run_scan([str(doc)], config)
+
+        result = queue.results()[0]
+        assert result.status == LinkStatus.ERROR
+        assert result.error == "RuntimeError: "
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_outcome_is_reraised_not_swallowed(
+        self, tmp_path: Path
+    ) -> None:
+        # Real asyncio.gather special-cases CancelledError: it re-raises rather
+        # than handing it back in the results list, even with return_exceptions=True.
+        # Patch gather directly so the scanner's own outcome-handling loop sees a
+        # CancelledError value and must re-raise it instead of converting it to
+        # an ERROR result.
+        doc = tmp_path / "index.md"
+        doc.write_text("[link](https://example.com)\n")
+        config = Config()
+
+        async def _fake_gather(*coros: object, return_exceptions: bool = True) -> list:
+            for c in coros:
+                c.close()  # avoid "coroutine was never awaited" warnings
+            return [asyncio.CancelledError()]
+
+        with (
+            patch("linksanity.scanner.dispatch", new=_mock_dispatch()),
+            patch("linksanity.scanner.asyncio.gather", new=_fake_gather),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_scan([str(doc)], config)
 
 
 class TestDocbookIdPrescan:

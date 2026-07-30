@@ -78,10 +78,16 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
         return_exceptions=True,
     )
     for (url, src, line, lt, cell), outcome in zip(to_check, outcomes, strict=True):
-        if isinstance(outcome, BaseException):
+        if isinstance(outcome, BaseException) and not isinstance(outcome, Exception):
+            # Not a regular Exception (e.g. asyncio.CancelledError, KeyboardInterrupt) --
+            # let it propagate instead of silently converting it to an ERROR result.
+            raise outcome
+        if isinstance(outcome, Exception):
             result = LinkResult(
                 source_file=src, line=line, url=url, link_type=lt,
-                status=LinkStatus.ERROR, error=str(outcome), cell=cell,
+                status=LinkStatus.ERROR,
+                error=f"{type(outcome).__name__}: {outcome}",
+                cell=cell,
             )
         else:
             result = outcome

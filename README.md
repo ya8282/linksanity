@@ -334,6 +334,22 @@ Rewriting source files is the one thing linksanity does that you can't undo with
 
 Redirect permanence comes from status codes recorded during the check. Entries cached by linksanity 0.1.x predate that field, so redirects resolved from an old cache are treated as suggestions rather than auto-fixes. Clear the cache, or wait for the TTL, after upgrading.
 
+## Use as a library
+
+For Python callers that want results in-process instead of shelling out, `linksanity.scan_paths` wraps the same scan pipeline the CLI uses and returns a plain list of `LinkResult` — no asyncio required:
+
+```python
+from linksanity import scan_paths, LinkStatus
+
+results = scan_paths(["docs/"], check_anchors=True)
+
+broken = [r for r in results if r.status == LinkStatus.BROKEN]
+for r in broken:
+    print(f"{r.source_file}:{r.line} -> {r.url}")
+```
+
+Pass a `Config` (from `linksanity.load_config` or constructed directly) via the `config=` keyword for anything beyond `check_anchors`, e.g. `--workers`/`--timeout` equivalents.
+
 ## Use with AI agents
 
 linksanity is designed to be a clean tool call for AI agents. Use `--format json` so an agent can parse structured output without screen-scraping console text.
@@ -429,7 +445,7 @@ Two things worth building into an agent that drives `--write`:
 
 ### Python subprocess usage
 
-Use this when you want to drive linksanity from a Python script or agent — for example, to file tickets, send alerts, or trigger auto-repair after a scan. linksanity doesn't expose a public Python API, so `subprocess.run` is the correct integration point.
+Use this when you want to drive linksanity as an external process — for example, from a non-Python agent, or to isolate the scan in its own process. If you're calling from Python and don't need process isolation, `scan_paths` (see "Use as a library" above) is simpler than parsing subprocess output.
 
 `result.returncode` is the fast path: check it before touching the file. If it's `2`, something went wrong with invocation — read `result.stderr` for the error message rather than trying to parse the output file.
 

@@ -40,7 +40,7 @@ linksanity is modular — install only what you need for your use case.
 | **Browser crawl** | `pip install "linksanity[browser]"` then `playwright install chromium` | `linksanity crawl https://docs.example.com` | [Crawl a live site](#crawl-a-live-site) |
 | **Pre-commit hook** | already included; add to `.pre-commit-config.yaml` | `repo: https://github.com/ya8282/linksanity`, `rev: v0.2.0`, `hooks: [{id: linksanity}]` | [Pre-commit hook](#pre-commit-hook) |
 | **GitHub Action** | none — no local install needed | `- uses: ya8282/linksanity-action@v1` with `paths: docs/` | [CI integration](#ci-integration) — see the `ya8282/linksanity-action` repo |
-| **Library API** | `pip install linksanity` | `from linksanity import scan_paths` | [Use as a library](#use-as-a-library) |
+| **Library API** | `pip install linksanity` | `from linksanity import scan_paths` | [Use as a library](#use-as-a-library) (note: no `./linksanity.toml` auto-discovery, unlike the CLI) |
 
 ## Supported formats
 
@@ -362,6 +362,8 @@ for r in broken:
 ```
 
 Pass a `Config` (from `linksanity.load_config` or constructed directly) via the `config=` keyword for anything beyond `check_anchors`, e.g. `--workers`/`--timeout` equivalents.
+
+Note: unlike the `linksanity scan` CLI command, `scan_paths(config=None)` does **not** auto-discover a `./linksanity.toml` in the current working directory — it uses bare `Config()` defaults. Call `load_config()` yourself and pass it as `config=` if you want the CLI's config-file discovery behavior.
 
 ## Use with AI agents
 

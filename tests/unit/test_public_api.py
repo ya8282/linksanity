@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
-from linksanity import Config, LinkStatus, scan_paths
+from linksanity import Config, LinkResult, LinkStatus, scan_paths
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 DOCS_DIR = FIXTURES / "docs"
@@ -44,3 +45,19 @@ class TestScanPaths:
 
         broken_urls = {r.url for r in results if r.status == LinkStatus.BROKEN}
         assert "#nonexistent-heading" in broken_urls
+
+    def test_scan_paths_works_from_running_event_loop(self) -> None:
+        # Regression test: scan_paths() must not raise RuntimeError when
+        # called from code that is already inside a running event loop
+        # (e.g. a Jupyter notebook cell or an async web handler). It should
+        # fall back to running the scan in a separate thread with its own
+        # event loop instead of crashing on asyncio.run().
+        async def _call_from_loop() -> list[LinkResult]:
+            return scan_paths([str(DOCS_DIR / "broken.md")])
+
+        results = asyncio.run(_call_from_loop())
+
+        assert len(results) == 2
+        broken = [r for r in results if r.status == LinkStatus.BROKEN]
+        assert len(broken) == 1
+        assert broken[0].url == "missing.md"

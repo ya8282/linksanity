@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+from concurrent.futures import ThreadPoolExecutor
 
 from linksanity.config import Config, load_config
 from linksanity.queue import LinkResult, LinkStatus, LinkType
@@ -40,6 +41,12 @@ def scan_paths(
     returns the flat list of :class:`~linksanity.queue.LinkResult` records
     for the scan, the same data the ``linksanity scan`` CLI command reports.
 
+    Safe to call even from within a running event loop (e.g. a Jupyter
+    notebook cell or an async web handler such as a FastAPI route): in that
+    case the scan runs in a separate worker thread with its own event loop,
+    rather than raising ``RuntimeError`` for calling :func:`asyncio.run`
+    while a loop is already running.
+
     Args:
         paths: Files, directories, or glob patterns to scan.
         check_anchors: Validate anchor fragments (``#section``) against
@@ -61,5 +68,17 @@ def scan_paths(
     if check_anchors and not cfg.check_anchors:
         cfg = dataclasses.replace(cfg, check_anchors=True)
 
-    queue = asyncio.run(run_scan(paths, cfg))
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No event loop running in this thread — safe to use asyncio.run
+        # directly.
+        queue = asyncio.run(run_scan(paths, cfg))
+    else:
+        # Already inside a running event loop (e.g. Jupyter, an async web
+        # handler). asyncio.run() would raise RuntimeError here, so run the
+        # scan in a separate thread that gets its own fresh event loop.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            queue = pool.submit(asyncio.run, run_scan(paths, cfg)).result()
+
     return queue.results()

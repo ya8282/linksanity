@@ -11,12 +11,21 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 from concurrent.futures import ThreadPoolExecutor
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _distribution_version
 
 from linksanity.config import Config, load_config
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 from linksanity.scanner import run_scan
 
-__version__ = "0.1.0"
+try:
+    # Read from installed metadata rather than a literal: a hand-maintained
+    # literal here silently drifted from pyproject.toml and shipped "0.1.0" in
+    # both the 0.1.1 and 0.2.0 artifacts. PyPI uploads are immutable, so that
+    # is not fixable after the fact.
+    __version__ = _distribution_version("linksanity")
+except PackageNotFoundError:  # imported from a source tree that was never installed
+    __version__ = "0.0.0+unknown"
 
 __all__ = [
     "Config",

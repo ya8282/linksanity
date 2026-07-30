@@ -15,6 +15,7 @@ import httpx
 
 from linksanity.config import Config
 from linksanity.queue import LinkResult, LinkStatus
+from linksanity.reporters._markdown_escape import escape_plain, wrap_code_span
 
 _API = "https://api.github.com"
 _TITLE_PREFIX = "[linksanity]"
@@ -59,9 +60,12 @@ def _build_body(broken: list[LinkResult]) -> str:
     by_file = sorted(broken, key=attrgetter("source_file", "line"))
     for _sf, group_iter in groupby(by_file, key=attrgetter("source_file")):
         for r in group_iter:
-            detail = f"`[{r.http_code}]`" if r.http_code else (r.error or "")
+            detail = f"`[{r.http_code}]`" if r.http_code else escape_plain(r.error or "")
             line_col = f"cell {r.cell}, line {r.line}" if r.cell is not None else f"{r.line}"
-            lines.append(f"| `{r.source_file}` | {line_col} | `{r.url}` | {detail} |")
+            lines.append(
+                f"| {wrap_code_span(r.source_file)} | {line_col} | "
+                f"{wrap_code_span(r.url)} | {detail} |"
+            )
     lines.append("\n_Opened by [linksanity](https://github.com/linksanity/linksanity)._")
     return "\n".join(lines)
 

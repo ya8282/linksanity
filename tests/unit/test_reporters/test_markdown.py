@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import io
+import re
+
+from markdown_it import MarkdownIt
 
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 from linksanity.reporters.markdown_reporter import report
+
+_MD = MarkdownIt("commonmark").enable("table")
 
 
 def _result(
@@ -125,6 +130,149 @@ class TestMarkdownDetails:
         out = _capture(results)
         assert "a.md" in out
         assert "b.md" in out
+
+
+class TestMarkdownEscaping:
+    # Regression: attacker-influenced free-text fields (URLs, error messages
+    # from third-party content) were interpolated into the Markdown table
+    # without escaping. A "|" splits the cell/row; a raw newline ends the
+    # row outright and corrupts the rest of the document. See linksanity-n7o.
+
+    def test_pipe_in_url_does_not_split_table_row(self) -> None:
+        r = _result(
+            LinkStatus.BROKEN,
+            url="https://gone.example.com/a|b",
+            http_code=404,
+        )
+        out = _capture([r])
+        # The escaped pipe must survive as a literal, backslash-escaped
+        # pipe inside the single URL cell, not an unescaped column divider.
+        assert "a\\|b" in out
+        details_line = next(line for line in out.splitlines() if "a\\|b" in line)
+        # Split on pipes that are NOT escaped with a backslash, the way a
+        # real Markdown table parser would. 4 columns => 5 unescaped delimiters
+        # (leading/trailing pipes plus 3 internal separators).
+        unescaped_cells = re.split(r"(?<!\\)\|", details_line)
+        assert len(unescaped_cells) == 6  # 5 delimiters -> 6 split parts (incl. empty ends)
+
+    def test_newline_in_error_does_not_break_table(self) -> None:
+        r = _result(
+            LinkStatus.ERROR,
+            error="first line\nsecond line",
+        )
+        out = _capture([r])
+        assert "first line<br>second line" in out
+        # No raw newline was introduced into the table row itself.
+        for line in out.splitlines():
+            assert "first line" not in line or "second line" in line
+
+    def test_pipe_in_error_does_not_split_table_row(self) -> None:
+        r = _result(LinkStatus.ERROR, error="timeout | retrying")
+        out = _capture([r])
+        assert "timeout \\| retrying" in out
+
+    def test_pipe_in_source_file_heading_escaped(self) -> None:
+        r = _result(
+            LinkStatus.BROKEN,
+            source_file="docs/a|b.md",
+            http_code=404,
+        )
+        out = _capture([r])
+        assert "a\\|b.md" in out
+
+    def test_pipe_in_resolved_url_escaped(self) -> None:
+        r = _result(
+            LinkStatus.REDIRECT,
+            resolved_url="https://new.example.com/x|y",
+            http_code=301,
+        )
+        out = _capture([r])
+        assert "x\\|y" in out
+
+    def test_pipe_in_redirect_chain_escaped(self) -> None:
+        r = _result(
+            LinkStatus.REDIRECT,
+            redirect_chain=["https://a.example.com/x|y", "https://b.example.com"],
+            http_code=301,
+        )
+        out = _capture([r])
+        assert "x\\|y" in out
+
+
+class TestMarkdownInjection:
+    # Regression: a backtick in a code-spanned free-text field (url,
+    # source_file, resolved_url, redirect_chain entries) could close the
+    # fixed single-backtick fence early, letting trailing "[text](url)"
+    # markup escape the span and render as a live link to an
+    # attacker-controlled domain; a raw "<tag>" could similarly escape and
+    # render as live HTML. The bare Detail cell had no code span at all, so
+    # no breakout was even needed. See linksanity-n7o follow-up.
+
+    def test_backtick_in_url_cannot_forge_live_link(self) -> None:
+        r = _result(
+            LinkStatus.ERROR,
+            url="https://e.example/x`[CLICK-ME](https://evil.example)`",
+            error="ok",
+        )
+        out = _capture([r])
+        html = _MD.render(out)
+        assert "<a href" not in html
+        assert "evil.example" not in html or "<a href" not in html
+
+    def test_backtick_in_source_file_cannot_forge_live_link(self) -> None:
+        r = _result(
+            LinkStatus.BROKEN,
+            source_file="docs/x`[CLICK-ME](https://evil.example)`.md",
+            http_code=404,
+        )
+        out = _capture([r])
+        html = _MD.render(out)
+        assert "<a href" not in html
+
+    def test_link_syntax_in_bare_error_cell_not_rendered_as_link(self) -> None:
+        r = _result(
+            LinkStatus.ERROR,
+            error="failed: [CLICK-ME](https://evil.example)",
+        )
+        out = _capture([r])
+        html = _MD.render(out)
+        assert "<a href" not in html
+        assert "[CLICK-ME](https://evil.example)" in html
+
+    def test_raw_html_tag_in_bare_error_cell_not_rendered(self) -> None:
+        r = _result(
+            LinkStatus.ERROR,
+            error="<img src=x onerror=alert(1)>",
+        )
+        out = _capture([r])
+        html = _MD.render(out)
+        assert "<img " not in html
+
+    def test_ordinary_fixture_byte_identical_shape(self) -> None:
+        # A plain URL, plain error, and a redirect chain must render with
+        # the existing look: single-backtick code spans, no stray escaping.
+        results = [
+            _result(LinkStatus.BROKEN, url="https://gone.example.com/path", http_code=404),
+            _result(
+                LinkStatus.REDIRECT,
+                url="https://old.example.com",
+                http_code=301,
+                redirect_chain=[
+                    "https://old.example.com",
+                    "https://mid.example.com",
+                    "https://new.example.com",
+                ],
+            ),
+            _result(LinkStatus.ERROR, url="https://err.example.com", error="connection refused"),
+        ]
+        out = _capture(results)
+        assert "`https://gone.example.com/path`" in out
+        assert "`https://old.example.com`" in out
+        assert "`https://mid.example.com`" in out
+        assert "`https://new.example.com`" in out
+        assert "connection refused" in out
+        # No double-backtick fences or padding spaces for plain content.
+        assert "``" not in out
 
 
 class TestMarkdownSummaryCounts:

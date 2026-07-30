@@ -9,6 +9,7 @@ from operator import attrgetter
 from typing import IO
 
 from linksanity.queue import LinkResult, LinkStatus
+from linksanity.reporters._markdown_escape import escape_plain, wrap_code_span
 
 _NOTABLE = {
     LinkStatus.BROKEN,
@@ -52,7 +53,7 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
     _w(out, "\n## Details\n")
     by_file = sorted(notable, key=attrgetter("source_file", "line"))
     for source_file, group_iter in groupby(by_file, key=attrgetter("source_file")):
-        _w(out, f"\n### `{source_file}`\n\n")
+        _w(out, f"\n### {wrap_code_span(source_file)}\n\n")
         _w(out, "| Line | Status | URL | Detail |\n|---|---|---|---|\n")
         for r in group_iter:
             status_icon = "❌" if r.status in (LinkStatus.BROKEN, LinkStatus.ERROR) else "↗"
@@ -60,21 +61,26 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
                 status_icon = "⚠"
             detail = _detail(r)
             line_col = f"cell {r.cell}, line {r.line}" if r.cell is not None else f"{r.line}"
-            _w(out, f"| {line_col} | {status_icon} {r.status.value} | `{r.url}` | {detail} |\n")
+            _w(
+                out,
+                f"| {line_col} | {status_icon} {r.status.value} | {wrap_code_span(r.url)} | "
+                f"{detail} |\n",
+            )
 
 
 def _detail(r: LinkResult) -> str:
     if r.status == LinkStatus.REDIRECT:
         suffix = f" `[{r.http_code}]`" if r.http_code else ""
         if r.redirect_chain:
-            return f"{' → '.join(f'`{u}`' for u in r.redirect_chain)}{suffix}"
-        return f"→ `{r.resolved_url}`{suffix}"
+            chain = " → ".join(wrap_code_span(u) for u in r.redirect_chain)
+            return f"{chain}{suffix}"
+        return f"→ {wrap_code_span(r.resolved_url or '')}{suffix}"
     if r.status == LinkStatus.TOO_MANY_REDIRECTS:
-        return r.error or ""
+        return escape_plain(r.error or "")
     if r.http_code and r.http_code >= 400:
         return f"`[{r.http_code}]`"
     if r.error:
-        return r.error
+        return escape_plain(r.error)
     return ""
 
 

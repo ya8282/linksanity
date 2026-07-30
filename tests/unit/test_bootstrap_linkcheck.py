@@ -39,9 +39,22 @@ def test_yes_mode_writes_expected_workflow(tmp_path: Path) -> None:
     text = workflow_path.read_text(encoding="utf-8")
     assert "https://example.com" in text
     assert "--max-pages 200" in text
-    assert "--check-anchors" in text
     assert "--block-analytics" in text
     assert 'cron: "0 8 * * 1"' in text
+
+    # crawl --check-anchors only exists from 0.2.0; the default pin is older,
+    # so the default workflow must not emit it.
+    assert "--check-anchors" not in text
+
+    # The install must be pinned, not floating on latest.
+    assert (
+        f'pip install "linksanity[browser]=={bootstrap_linkcheck.DEFAULT_LINKSANITY_VERSION}"'
+        in text
+    )
+
+    # `cache: pip` makes setup-python fail in repos with no Python manifest,
+    # which is most sites this workflow gets bootstrapped into.
+    assert "cache: pip" not in text
 
 
 def test_rerun_without_force_fails_and_does_not_modify(tmp_path: Path) -> None:
@@ -67,6 +80,52 @@ def test_no_check_anchors_no_block_analytics_omits_flags() -> None:
     assert "--check-anchors" not in yaml_text
     assert "--block-analytics" not in yaml_text
     assert "linksanity crawl https://example.com" in yaml_text
+
+
+def test_check_anchors_rejected_against_old_pin(tmp_path: Path) -> None:
+    """The exact failure that broke the chrischo.org run: crawl --check-anchors
+    emitted against a linksanity that has it on `scan` only."""
+    result = _run(
+        [
+            "--repo",
+            str(tmp_path),
+            "--yes",
+            "--url",
+            "https://example.com",
+            "--check-anchors",
+            "--linksanity-version",
+            "0.1.1",
+        ]
+    )
+    assert result.returncode == 2
+    assert "0.2.0" in result.stderr
+    assert not (tmp_path / ".github" / "workflows" / "linkcheck.yml").exists()
+
+
+def test_check_anchors_allowed_against_new_enough_pin(tmp_path: Path) -> None:
+    result = _run(
+        [
+            "--repo",
+            str(tmp_path),
+            "--yes",
+            "--url",
+            "https://example.com",
+            "--check-anchors",
+            "--linksanity-version",
+            "0.2.0",
+        ]
+    )
+    assert result.returncode == 0, result.stderr
+    text = (tmp_path / ".github" / "workflows" / "linkcheck.yml").read_text(encoding="utf-8")
+    assert "--check-anchors" in text
+    assert 'pip install "linksanity[browser]==0.2.0"' in text
+
+
+def test_version_tuple_orders_releases() -> None:
+    vt = bootstrap_linkcheck._version_tuple
+    assert vt("0.1.1") < vt("0.2.0")
+    assert vt("0.2.0") < vt("0.10.0")
+    assert vt("0.2.0rc1") == vt("0.2.0")
 
 
 def test_yes_requires_url(tmp_path: Path) -> None:

@@ -528,6 +528,43 @@ Read results.json and summarise which links are broken and why they might have r
 
 ## Options
 
+### Which flag works with which subcommand
+
+The three subcommands share most flags but not all of them. Passing a flag to a
+subcommand that doesn't define it exits `2` with `No such option`.
+
+| Flag | `scan` | `fix` | `crawl` |
+|---|:--:|:--:|:--:|
+| `--config` | ✅ | ✅ | ✅ |
+| `--workers` | ✅ | ✅ | ✅ |
+| `--timeout` | ✅ | ✅ | ✅ |
+| `--retry` | ✅ | ✅ | ✅ |
+| `--format` | ✅ | ✅ | ✅ |
+| `--output` | ✅ | ✅ | ✅ |
+| `--ignore-domains` | ✅ | ✅ | ✅ |
+| `--skip-urls` | ✅ | ✅ | ✅ |
+| `--check-anchors` | ✅ | ✅ | ✅ *(since 0.2.0)* |
+| `--check-images` | ✅ | ✅ | — |
+| `--link-style` | ✅ | ✅ | — |
+| `--cache`, `--cache-ttl` | ✅ | ✅ | — |
+| `--report` | ✅ | — | ✅ |
+| `--github-issue`, `--repo` | ✅ | — | ✅ |
+| `--annotations` | ✅ | — | ✅ |
+| `--max-redirects` | ✅ | — | ✅ |
+| `--js-domains` | ✅ | — | — |
+| `--offline` | ✅ | — | — |
+| `--myst` | ✅ | — | — |
+| `--baseline`, `--incremental`, `--since` | ✅ | — | — |
+| `--write`, `--force`, `--redirects`, `--wayback` | — | ✅ | — |
+| `--max-pages` | — | — | ✅ |
+| `--playwright-workers` | — | — | ✅ |
+| `--block-analytics` | — | — | ✅ |
+
+A `linksanity.toml` is shared by all three subcommands, so a key set there is
+accepted even by a subcommand with no matching flag. Keys that a subcommand
+doesn't act on are ignored silently — `check_anchors` was ignored by `crawl`
+before 0.2.0, for example.
+
 ### `linksanity scan <paths...>`
 
 | Flag | Default | Description |
@@ -565,7 +602,9 @@ Reuses the `scan` flags that affect what gets checked (`--config`, `--workers`, 
 
 ### `linksanity crawl <url>`
 
-Same flags as `scan`, minus `--check-anchors`, `--js-domains`, and `--offline`, plus:
+Same flags as `scan`, minus `--js-domains`, `--offline`, `--myst`, `--check-images`,
+`--link-style`, `--cache`/`--cache-ttl`, and the `--baseline`/`--incremental`/`--since`
+group, plus:
 
 | Flag | Default | Description |
 |---|---|---|
@@ -573,6 +612,7 @@ Same flags as `scan`, minus `--check-anchors`, `--js-domains`, and `--offline`, 
 | `--playwright-workers N` | 2 | Max concurrent browser sessions |
 | `--skip-urls FILE` | — | URLs/patterns to skip (one per line, `*` wildcards ok) |
 | `--block-analytics` | off | Block analytics/tracking domains in the browser |
+| `--check-anchors` | off | Validate `#fragment` links against the crawled target page's element ids (**requires 0.2.0+**; on 0.1.1 this flag is `scan`-only) |
 
 ## Configuration file
 

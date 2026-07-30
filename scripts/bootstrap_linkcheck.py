@@ -30,7 +30,35 @@ DEFAULT_SCHEDULE = "0 8 * * 1"
 DEFAULT_MAX_PAGES = 200
 DEFAULT_WORKFLOW_NAME = "linkcheck.yml"
 
+# Latest linksanity release on PyPI. The generated workflow pins this rather
+# than floating on latest: this script renders flags from the dev tree, so an
+# unpinned install silently drifts into "No such option" failures whenever the
+# CLI gains or renames a flag. Bump on release.
+DEFAULT_LINKSANITY_VERSION = "0.1.1"
+
+# `crawl --check-anchors` did not exist until 0.2.0 -- it was scan-only before
+# that. Emitting it against an older pin fails the job with "No such option".
+CHECK_ANCHORS_MIN_VERSION = "0.2.0"
+
 _TRUTHY = {"y", "yes", "true", "1"}
+
+
+def _version_tuple(version: str) -> tuple[int, ...]:
+    """Parse 'X.Y.Z' into a comparable tuple, ignoring any suffix on each part.
+
+    ponytail: leading-digits parse, correct for the X.Y.Z and X.Y.Zrc1 forms
+    linksanity actually publishes. Swap in packaging.version if pre-release
+    ordering ever has to be exact.
+    """
+    parts: list[int] = []
+    for chunk in version.split("."):
+        digits = ""
+        for ch in chunk:
+            if not ch.isdigit():
+                break
+            digits += ch
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
 
 
 def ask(prompt: str, default: str) -> str:
@@ -46,6 +74,7 @@ def render_workflow(
     max_pages: int,
     check_anchors: bool,
     block_analytics: bool,
+    version: str = DEFAULT_LINKSANITY_VERSION,
 ) -> str:
     """Render the GitHub Actions workflow YAML as a plain string.
 
@@ -82,11 +111,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       - name: Install linksanity
         run: |
-          pip install "linksanity[browser]"
+          pip install "linksanity[browser]=={version}"
           playwright install --with-deps chromium
 
       - name: Crawl {url}
@@ -155,11 +183,23 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Max pages passed to `linksanity crawl --max-pages` (default: {DEFAULT_MAX_PAGES})",
     )
     parser.add_argument(
+        "--linksanity-version",
+        dest="linksanity_version",
+        default=None,
+        help=(
+            "linksanity version the workflow pins and installs "
+            f"(default: {DEFAULT_LINKSANITY_VERSION!r})"
+        ),
+    )
+    parser.add_argument(
         "--check-anchors",
         dest="check_anchors",
         default=None,
         action=argparse.BooleanOptionalAction,
-        help="Include --check-anchors in the crawl step (default: true)",
+        help=(
+            "Include --check-anchors in the crawl step (default: false; "
+            f"requires linksanity >= {CHECK_ANCHORS_MIN_VERSION})"
+        ),
     )
     parser.add_argument(
         "--block-analytics",
@@ -203,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         url = args.url
         schedule = args.schedule if args.schedule is not None else DEFAULT_SCHEDULE
         max_pages = args.max_pages if args.max_pages is not None else DEFAULT_MAX_PAGES
-        check_anchors = args.check_anchors if args.check_anchors is not None else True
+        check_anchors = args.check_anchors if args.check_anchors is not None else False
         block_analytics = args.block_analytics if args.block_analytics is not None else True
         workflow_name = args.workflow_name if args.workflow_name is not None else DEFAULT_WORKFLOW_NAME
     else:
@@ -227,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.check_anchors is not None:
             check_anchors = args.check_anchors
         else:
-            check_anchors = ask("Check anchors? (yes/no)", "yes").strip().lower() in _TRUTHY
+            check_anchors = ask("Check anchors? (yes/no)", "no").strip().lower() in _TRUTHY
 
         if args.block_analytics is not None:
             block_analytics = args.block_analytics
@@ -239,6 +279,25 @@ def main(argv: list[str] | None = None) -> int:
             if args.workflow_name is not None
             else ask("Workflow filename", DEFAULT_WORKFLOW_NAME)
         )
+
+    version = (
+        args.linksanity_version
+        if args.linksanity_version is not None
+        else DEFAULT_LINKSANITY_VERSION
+    )
+
+    # Fail here rather than shipping a workflow that dies on its first run with
+    # a bare "No such option: --check-anchors" from inside a scheduled job.
+    if check_anchors and _version_tuple(version) < _version_tuple(CHECK_ANCHORS_MIN_VERSION):
+        print(
+            f"error: `crawl --check-anchors` requires linksanity >= "
+            f"{CHECK_ANCHORS_MIN_VERSION}, but the workflow pins {version}.\n"
+            f"  Fix: re-run with --no-check-anchors, or with "
+            f"--linksanity-version {CHECK_ANCHORS_MIN_VERSION} once that release "
+            f"is published to PyPI.",
+            file=sys.stderr,
+        )
+        return 2
 
     repo_path = Path(args.repo)
     workflow_dir = repo_path / ".github" / "workflows"
@@ -258,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
         max_pages=max_pages,
         check_anchors=check_anchors,
         block_analytics=block_analytics,
+        version=version,
     )
     target_path.write_text(yaml_text, encoding="utf-8")
     print(f"wrote workflow to {target_path}")

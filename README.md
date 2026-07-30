@@ -29,6 +29,19 @@ ok=38   broken=1   redirect=1   skipped=0
 - **JS-rendered pages** — route specific domains through Playwright in scan mode
 - **Retry logic** — exponential back-off on 429/503; HEAD→GET fallback on 405
 
+## Adopt what you need
+
+linksanity is modular — install only what you need for your use case.
+
+| Use case | Install | Minimal example | Details |
+|---|---|---|---|
+| **Scanner only** | `pip install linksanity` | `linksanity scan ./docs/` | [Quick start](#quick-start) |
+| **Fixer** | already included | `linksanity fix ./docs/` (dry run; add `--write` to apply) | [Fixing broken links](#fixing-broken-links) |
+| **Browser crawl** | `pip install "linksanity[browser]"` then `playwright install chromium` | `linksanity crawl https://docs.example.com` | [Crawl a live site](#crawl-a-live-site) |
+| **Pre-commit hook** | already included; add to `.pre-commit-config.yaml` | `repo: https://github.com/ya8282/linksanity`, `rev: v0.2.0`, `hooks: [{id: linksanity}]` | [Pre-commit hook](#pre-commit-hook) |
+| **GitHub Action** | none — no local install needed | `- uses: ya8282/linksanity-action@v1` with `paths: docs/` | [CI integration](#ci-integration) — see the `ya8282/linksanity-action` repo |
+| **Library API** | `pip install linksanity` | `from linksanity import scan_paths` | [Use as a library](#use-as-a-library) |
+
 ## Supported formats
 
 linksanity checks links in 8 file formats:

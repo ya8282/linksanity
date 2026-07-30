@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -250,6 +251,32 @@ class TestExceptionHandling:
                    side_effect=RuntimeError("browser crashed")):
             queue = await run_crawl(START, _config())
         assert queue.results()[0].status == LinkStatus.ERROR
+
+    @pytest.mark.asyncio
+    async def test_playwright_exception_error_includes_type_name(self) -> None:
+        with patch("linksanity.crawler.crawl_page", new_callable=AsyncMock,
+                   side_effect=RuntimeError("browser crashed")):
+            queue = await run_crawl(START, _config())
+        assert queue.results()[0].error == "RuntimeError: browser crashed"
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_outcome_is_reraised_not_swallowed(self) -> None:
+        # Real asyncio.gather special-cases CancelledError: it re-raises rather
+        # than handing it back in the results list, even with return_exceptions=True.
+        # Patch gather directly so the crawler's own outcome-handling loop sees a
+        # CancelledError value and must re-raise it instead of converting it to
+        # an ERROR result.
+        async def _fake_gather(*coros: object, return_exceptions: bool = True) -> list:
+            for c in coros:
+                c.close()  # avoid "coroutine was never awaited" warnings
+            return [asyncio.CancelledError()]
+
+        with (
+            patch("linksanity.crawler.crawl_page", new_callable=AsyncMock),
+            patch("linksanity.crawler.asyncio.gather", new=_fake_gather),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_crawl(START, _config())
 
 
 # ── _norm helper ─────────────────────────────────────────────────────────────

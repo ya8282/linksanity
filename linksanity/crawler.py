@@ -57,11 +57,15 @@ async def run_crawl(start_url: str, config: Config) -> LinkQueue:
         )
 
         for url, outcome in zip(batch, outcomes, strict=True):
-            if isinstance(outcome, BaseException):
+            if isinstance(outcome, BaseException) and not isinstance(outcome, Exception):
+                # Not a regular Exception (e.g. asyncio.CancelledError, KeyboardInterrupt) --
+                # let it propagate instead of silently converting it to an ERROR result.
+                raise outcome
+            if isinstance(outcome, Exception):
                 result: LinkResult = LinkResult(
                     source_file=start_url, line=0, url=url,
                     link_type=LinkType.EXTERNAL, status=LinkStatus.ERROR,
-                    error=str(outcome),
+                    error=f"{type(outcome).__name__}: {outcome}",
                 )
                 links: list[str] = []
                 ids: set[str] = set()

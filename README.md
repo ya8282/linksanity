@@ -543,7 +543,7 @@ subcommand that doesn't define it exits `2` with `No such option`.
 | `--output` | ✅ | ✅ | ✅ |
 | `--ignore-domains` | ✅ | ✅ | ✅ |
 | `--skip-urls` | ✅ | ✅ | ✅ |
-| `--check-anchors` | ✅ | ✅ | ✅ *(since 0.2.0)* |
+| `--check-anchors` | ✅ | ✅ | ✅ |
 | `--check-images` | ✅ | ✅ | — |
 | `--link-style` | ✅ | ✅ | — |
 | `--cache`, `--cache-ttl` | ✅ | ✅ | — |
@@ -562,8 +562,8 @@ subcommand that doesn't define it exits `2` with `No such option`.
 
 A `linksanity.toml` is shared by all three subcommands, so a key set there is
 accepted even by a subcommand with no matching flag. Keys that a subcommand
-doesn't act on are ignored silently — `check_anchors` was ignored by `crawl`
-before 0.2.0, for example.
+doesn't act on are ignored silently — `check_images` is ignored by `crawl`,
+for example, since `crawl` has no `--check-images` flag.
 
 ### `linksanity scan <paths...>`
 
@@ -612,7 +612,7 @@ group, plus:
 | `--playwright-workers N` | 2 | Max concurrent browser sessions |
 | `--skip-urls FILE` | — | URLs/patterns to skip (one per line, `*` wildcards ok) |
 | `--block-analytics` | off | Block analytics/tracking domains in the browser |
-| `--check-anchors` | off | Validate `#fragment` links against the crawled target page's element ids (**requires 0.2.0+**; on 0.1.1 this flag is `scan`-only) |
+| `--check-anchors` | off | Validate `#fragment` links against the crawled target page's element ids |
 
 ## Configuration file
 

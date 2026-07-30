@@ -42,9 +42,9 @@ def test_yes_mode_writes_expected_workflow(tmp_path: Path) -> None:
     assert "--block-analytics" in text
     assert 'cron: "0 8 * * 1"' in text
 
-    # crawl --check-anchors only exists from 0.2.0; the default pin is older,
-    # so the default workflow must not emit it.
-    assert "--check-anchors" not in text
+    # crawl --check-anchors exists from 0.2.0, which is now the default pin,
+    # so the default workflow must emit it.
+    assert "--check-anchors" in text
 
     # The install must be pinned, not floating on latest.
     assert (

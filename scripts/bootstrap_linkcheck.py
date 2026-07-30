@@ -34,7 +34,7 @@ DEFAULT_WORKFLOW_NAME = "linkcheck.yml"
 # than floating on latest: this script renders flags from the dev tree, so an
 # unpinned install silently drifts into "No such option" failures whenever the
 # CLI gains or renames a flag. Bump on release.
-DEFAULT_LINKSANITY_VERSION = "0.1.1"
+DEFAULT_LINKSANITY_VERSION = "0.2.0"
 
 # `crawl --check-anchors` did not exist until 0.2.0 -- it was scan-only before
 # that. Emitting it against an older pin fails the job with "No such option".
@@ -91,11 +91,12 @@ def render_workflow(
     crawl_lines.append("            --output crawl-results.json")
     crawl_step = "\n".join(crawl_lines)
 
-    # linksanity 0.1.1 (what the generated workflow actually installs) has no
-    # --annotations flag or github_annotations reporter -- both landed in the
-    # unreleased 0.2.0. So report broken links ourselves from the JSON results
-    # via jq: an inline ::error:: annotation per broken link plus a Markdown
-    # table in $GITHUB_STEP_SUMMARY. In crawl mode `source_file` is the page
+    # Report broken links ourselves from the JSON results via jq rather than
+    # relying on linksanity's --annotations flag: the JSON schema is stable
+    # across releases, so this keeps working no matter which version the pin
+    # names, and it also produces a $GITHUB_STEP_SUMMARY table that
+    # --annotations does not. One inline ::error:: annotation per broken link
+    # plus that table. In crawl mode `source_file` is the page
     # URL a link was found on, not a repo path, so (unlike the scan action)
     # there is no meaningful file=/line= to attach -- fold the source page
     # into the message text instead. This step must never fail the job itself;
@@ -253,7 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         action=argparse.BooleanOptionalAction,
         help=(
-            "Include --check-anchors in the crawl step (default: false; "
+            "Include --check-anchors in the crawl step (default: true; "
             f"requires linksanity >= {CHECK_ANCHORS_MIN_VERSION})"
         ),
     )
@@ -299,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
         url = args.url
         schedule = args.schedule if args.schedule is not None else DEFAULT_SCHEDULE
         max_pages = args.max_pages if args.max_pages is not None else DEFAULT_MAX_PAGES
-        check_anchors = args.check_anchors if args.check_anchors is not None else False
+        check_anchors = args.check_anchors if args.check_anchors is not None else True
         block_analytics = args.block_analytics if args.block_analytics is not None else True
         workflow_name = args.workflow_name if args.workflow_name is not None else DEFAULT_WORKFLOW_NAME
     else:
@@ -323,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.check_anchors is not None:
             check_anchors = args.check_anchors
         else:
-            check_anchors = ask("Check anchors? (yes/no)", "no").strip().lower() in _TRUTHY
+            check_anchors = ask("Check anchors? (yes/no)", "yes").strip().lower() in _TRUTHY
 
         if args.block_analytics is not None:
             block_analytics = args.block_analytics

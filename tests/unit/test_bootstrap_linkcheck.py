@@ -69,6 +69,47 @@ def test_rerun_without_force_fails_and_does_not_modify(tmp_path: Path) -> None:
     assert workflow_path.read_text(encoding="utf-8") == original_text
 
 
+def test_workflow_includes_broken_link_reporting_step() -> None:
+    """linksanity 0.1.1 has no --annotations flag / github_annotations reporter
+    (both are unreleased 0.2.0-only), so the generated workflow must report
+    broken links itself from crawl-results.json rather than depending on them.
+    """
+    yaml_text = bootstrap_linkcheck.render_workflow(
+        url="https://example.com",
+        schedule="0 8 * * 1",
+        max_pages=200,
+        check_anchors=False,
+        block_analytics=True,
+    )
+
+    assert "name: Report broken links" in yaml_text
+    assert "crawl-results.json" in yaml_text
+    assert "GITHUB_STEP_SUMMARY" in yaml_text
+    assert "broken" in yaml_text and '"error"' in yaml_text
+
+    # 0.1.1 has no --annotations flag; the reporting step must not depend on it.
+    assert "--annotations" not in yaml_text
+
+    # In crawl mode `source_file` is the page URL a link was found on, not a
+    # repo path, so this step must not emit file=/line= annotation attributes
+    # (those are only meaningful for the scan action's real repo paths).
+    assert "file=" not in yaml_text
+    assert "line=" not in yaml_text
+
+    # The reporting step must run even when the crawl step fails, but must
+    # never itself fail the job -- the crawl step's own exit code decides.
+    report_step_index = yaml_text.index("name: Report broken links")
+    preceding_lines = yaml_text[:report_step_index].splitlines()
+    following_lines = yaml_text[report_step_index:].splitlines()
+    assert any("if: always()" in line for line in following_lines[:3])
+
+    # It must be placed after the crawl step and before the upload step.
+    crawl_index = yaml_text.index("name: Crawl https://example.com")
+    upload_index = yaml_text.index("name: Upload results")
+    assert crawl_index < report_step_index < upload_index
+    assert preceding_lines  # sanity: report step isn't the very first line
+
+
 def test_no_check_anchors_no_block_analytics_omits_flags() -> None:
     yaml_text = bootstrap_linkcheck.render_workflow(
         url="https://example.com",

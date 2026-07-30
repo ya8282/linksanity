@@ -91,6 +91,60 @@ def render_workflow(
     crawl_lines.append("            --output crawl-results.json")
     crawl_step = "\n".join(crawl_lines)
 
+    # linksanity 0.1.1 (what the generated workflow actually installs) has no
+    # --annotations flag or github_annotations reporter -- both landed in the
+    # unreleased 0.2.0. So report broken links ourselves from the JSON results
+    # via jq: an inline ::error:: annotation per broken link plus a Markdown
+    # table in $GITHUB_STEP_SUMMARY. In crawl mode `source_file` is the page
+    # URL a link was found on, not a repo path, so (unlike the scan action)
+    # there is no meaningful file=/line= to attach -- fold the source page
+    # into the message text instead. This step must never fail the job itself;
+    # the crawl step's own exit code already decides pass/fail.
+    report_step = r"""      - name: Report broken links
+        if: always()
+        run: |
+          RESULTS=crawl-results.json
+          if [ -f "$RESULTS" ] && [ -s "$RESULTS" ]; then
+            broken_count=$(jq '[.[] | select(.status=="broken" or .status=="error")] | length' "$RESULTS" 2>/dev/null || echo 0)
+            if [ "$broken_count" -gt 0 ]; then
+              # .error (and, more rarely, .url/.source_file) can be arbitrary
+              # third-party text -- e.g. a Playwright exception string -- and
+              # may contain embedded CR/LF. Left unsanitized, jq -r would emit
+              # that newline literally and `while read` would split it into a
+              # second "line" that GitHub parses as its own, attacker-controlled
+              # ::error:: annotation. Collapse CR/LF to a space before use.
+              jq -r '
+                .[]
+                | select(.status=="broken" or .status=="error")
+                | . as $r
+                | ($r.source_file // "" | gsub("[\r\n]+"; " ")) as $source
+                | ($r.url // "" | gsub("[\r\n]+"; " ")) as $url
+                | (if $r.http_code != null then ($r.http_code|tostring) elif $r.error != null then ($r.error|tostring) else "" end | gsub("[\r\n]+"; " ")) as $detail
+                | "::error::" + $url + " (found on " + $source + ") — " + ($r.status // "") + (if $detail == "" then "" else " " + $detail end)
+              ' "$RESULTS" | while IFS= read -r annotation; do
+                printf '%s\n' "$annotation"
+              done || true
+
+              if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+                {
+                  echo "### $broken_count broken link(s) found"
+                  echo ""
+                  echo "| Source page | URL | Status | Detail |"
+                  echo "| --- | --- | --- | --- |"
+                  jq -r '
+                    .[]
+                    | select(.status=="broken" or .status=="error")
+                    | . as $r
+                    | ($r.source_file // "" | gsub("[\r\n]+"; " ")) as $source
+                    | ($r.url // "" | gsub("[\r\n]+"; " ")) as $url
+                    | (if $r.http_code != null then ($r.http_code|tostring) elif $r.error != null then ($r.error|tostring) else "" end | gsub("[\r\n]+"; " ")) as $detail
+                    | "| " + ($source | gsub("\\|"; "\\|")) + " | " + ($url | gsub("\\|"; "\\|")) + " | " + ($r.status // "") + " | " + ($detail | gsub("\\|"; "\\|")) + " |"
+                  ' "$RESULTS"
+                } >> "$GITHUB_STEP_SUMMARY" || true
+              fi
+            fi
+          fi"""
+
     return f"""# Crawls {url} and fails the job if any link is broken.
 name: Link check
 
@@ -120,6 +174,8 @@ jobs:
       - name: Crawl {url}
         run: |
 {crawl_step}
+
+{report_step}
 
       - name: Upload results
         if: always()

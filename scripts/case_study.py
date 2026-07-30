@@ -75,23 +75,26 @@ def _run_scan(docs_dir: Path, json_out: Path) -> tuple[float, list[dict]]:
     return elapsed, data
 
 
-def _run_fix_dry_run(docs_dir: Path) -> int:
+def _run_fix_dry_run(docs_dir: Path) -> int | None:
     """Count auto-applicable fixes `linksanity fix --dry-run` would apply.
 
-    Returns 0 (with no error) if fix output can't be parsed as JSON -- that
-    is surfaced honestly in the rendered report rather than guessed at.
+    Returns None if the dry run itself fails or its output can't be parsed
+    as JSON -- that is surfaced honestly in the rendered report rather than
+    guessed at as zero.
     """
     cmd = [sys.executable, "-m", "linksanity", "fix", str(docs_dir), "--format", "json"]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode not in (0, 1):
-        return 0
+        return None
     stdout = proc.stdout.strip()
-    if not stdout or stdout.startswith("[linksanity] nothing to fix"):
+    if stdout.startswith("[linksanity] nothing to fix"):
         return 0
+    if not stdout:
+        return None
     try:
         proposals = json.loads(stdout)
     except json.JSONDecodeError:
-        return 0
+        return None
     return sum(1 for p in proposals if p.get("auto_applicable"))
 
 
@@ -118,7 +121,7 @@ def _render(
     date: str,
     stats: dict[str, int],
     results: list[dict],
-    auto_fixable: int,
+    auto_fixable: int | None,
     runtime_s: float,
     scan_cmd: str,
     fix_cmd: str,
@@ -161,7 +164,13 @@ def _render(
 
     lines.append("## Auto-fixable")
     lines.append("")
-    lines.append(f"{auto_fixable} link(s) could be auto-fixed by `linksanity fix --write`.")
+    if auto_fixable is None:
+        lines.append(
+            "Could not determine how many links are auto-fixable "
+            "(`linksanity fix` dry run failed)."
+        )
+    else:
+        lines.append(f"{auto_fixable} link(s) could be auto-fixed by `linksanity fix --write`.")
     lines.append("")
 
     lines.append("## Runtime")

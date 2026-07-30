@@ -7,6 +7,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+
+from case_study import _render  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "case_study.py"
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "case_study"
@@ -48,3 +52,41 @@ def test_clean_fixture_produces_clean_site_study(tmp_path: Path) -> None:
     assert match is not None, text
     assert int(match.group(1)) == 0
     assert "Clean site" in text
+
+
+def _render_kwargs(**overrides: object) -> dict:
+    base: dict = {
+        "slug": "test",
+        "target": "test-target",
+        "commit": "abc123",
+        "date": "2026-01-01",
+        "stats": {
+            "files_scanned": 1,
+            "links_checked": 1,
+            "ok": 1,
+            "broken": 0,
+            "redirect": 0,
+            "skipped": 0,
+        },
+        "results": [],
+        "auto_fixable": 0,
+        "runtime_s": 0.1,
+        "scan_cmd": "scan-cmd",
+        "fix_cmd": "fix-cmd",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_render_reports_unknown_when_auto_fixable_is_none() -> None:
+    markdown = _render(**_render_kwargs(auto_fixable=None))
+
+    assert "Could not determine how many links are auto-fixable" in markdown
+    assert "link(s) could be auto-fixed" not in markdown
+
+
+def test_render_reports_count_when_auto_fixable_is_int() -> None:
+    markdown = _render(**_render_kwargs(auto_fixable=3))
+
+    assert "3 link(s) could be auto-fixed by `linksanity fix --write`." in markdown
+    assert "Could not determine" not in markdown

@@ -190,6 +190,17 @@ def scan(
 
     config = load_config(config_path, **overrides)
 
+    if config.js_domains:
+        try:
+            import playwright  # noqa: F401
+        except ImportError:
+            typer.echo(
+                "[linksanity] Playwright is required for --js-domains.\n"
+                "Install it: pip install linksanity[browser] && playwright install chromium",
+                err=True,
+            )
+            raise typer.Exit(2) from None
+
     if github_issue and not repo and not config.github_repo:
         typer.echo("[linksanity] --repo is required with --github-issue", err=True)
         raise typer.Exit(2)
@@ -419,6 +430,17 @@ def fix(
         if default.exists():
             config_path = default
     config = load_config(config_path, **overrides)
+
+    if config.js_domains:
+        try:
+            import playwright  # noqa: F401
+        except ImportError:
+            typer.echo(
+                "[linksanity] Playwright is required for --js-domains.\n"
+                "Install it: pip install linksanity[browser] && playwright install chromium",
+                err=True,
+            )
+            raise typer.Exit(2) from None
 
     proposals = asyncio.run(_collect_proposals(paths, config, redirects, wayback))
 

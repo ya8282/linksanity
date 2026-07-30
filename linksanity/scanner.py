@@ -12,7 +12,7 @@ from linksanity.cache import Cache
 from linksanity.config import Config
 from linksanity.parsers import asciidoc, docbook, html, markdown, mdx, notebook, rst
 from linksanity.parsers import myst as myst_parser
-from linksanity.queue import LinkQueue, LinkResult, LinkType
+from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
 from linksanity.router import classify, dispatch
 
 # Only network-checked link types are worth caching — filesystem/anchor checks
@@ -67,16 +67,24 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
         else:
             to_check.append((url, src, line, lt, cell))
 
-    results = await asyncio.gather(
+    outcomes = await asyncio.gather(
         *[
             dispatch(
                 url, src, line, lt, config, http_sem, pw_sem,
                 cell=cell, docbook_ids=docbook_ids,
             )
             for url, src, line, lt, cell in to_check
-        ]
+        ],
+        return_exceptions=True,
     )
-    for result in results:
+    for (url, src, line, lt, cell), outcome in zip(to_check, outcomes, strict=True):
+        if isinstance(outcome, BaseException):
+            result = LinkResult(
+                source_file=src, line=line, url=url, link_type=lt,
+                status=LinkStatus.ERROR, error=str(outcome), cell=cell,
+            )
+        else:
+            result = outcome
         queue.record(result)
         if cache and not config.offline and result.link_type in _CACHEABLE:
             cache.put(result)

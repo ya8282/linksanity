@@ -80,6 +80,50 @@ class TestStatusClassification:
         assert result.status == LinkStatus.BROKEN
 
 
+# ── Normalization-only differences (no real HTTP hop) ─────────────────────────
+# httpx normalizes the request URL (host casing, scheme casing, dot-segments)
+# before it ever hits the wire. `resolved_url` reflects that normalized form
+# even when zero redirect responses were received, so redirect detection must
+# not compare `resolved_url` against `url` as strings — see `history` below.
+
+class TestNormalizationOnlyDifference:
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_uppercase_host_is_not_a_redirect(self) -> None:
+        respx.head(URL).mock(return_value=httpx.Response(200))
+        result = await check(
+            "https://EXAMPLE.com/page", **make_kwargs()  # type: ignore[arg-type]
+        )
+        assert result.status == LinkStatus.OK
+        assert result.resolved_url is None
+        assert result.redirect_chain is None
+        assert result.redirect_codes is None
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_uppercase_scheme_is_not_a_redirect(self) -> None:
+        respx.head(URL).mock(return_value=httpx.Response(200))
+        result = await check(
+            "HTTPS://example.com/page", **make_kwargs()  # type: ignore[arg-type]
+        )
+        assert result.status == LinkStatus.OK
+        assert result.resolved_url is None
+        assert result.redirect_chain is None
+        assert result.redirect_codes is None
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_dot_segment_path_is_not_a_redirect(self) -> None:
+        respx.head(URL).mock(return_value=httpx.Response(200))
+        result = await check(
+            "https://example.com/docs/../page", **make_kwargs()  # type: ignore[arg-type]
+        )
+        assert result.status == LinkStatus.OK
+        assert result.resolved_url is None
+        assert result.redirect_chain is None
+        assert result.redirect_codes is None
+
+
 # ── Redirect status codes ─────────────────────────────────────────────────────
 
 class TestRedirectCodes:

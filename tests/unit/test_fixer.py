@@ -141,6 +141,36 @@ class TestRedirectProposals:
         assert NEW in p.detail
 
 
+# ── URL normalization is not a redirect (end-to-end into the checker) ─────────
+# Regression for the false "temporary redirect" fix proposal: a checker result
+# whose only difference from the requested URL is httpx normalization (no HTTP
+# hop) must not reach build_redirect_proposals as a REDIRECT at all, so it
+# must produce zero proposals and never emit the "(temporary redirect...)"
+# suggestion text.
+
+class TestNormalizationDoesNotProduceAProposal:
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_uppercase_host_produces_no_proposal(self) -> None:
+        from linksanity.checkers.http import check
+
+        respx.head("https://example.com/page").mock(return_value=httpx.Response(200))
+        result = await check(
+            "https://EXAMPLE.com/page",
+            source_file="docs/a.md",
+            line=1,
+            link_type=LinkType.EXTERNAL,
+            timeout=5,
+            retries=0,
+        )
+        assert result.status == LinkStatus.OK
+
+        q = _queue(("docs/a.md", 1), url="https://EXAMPLE.com/page")
+        proposals = build_redirect_proposals([result], q)
+        assert proposals == []
+        assert not any("temporary redirect" in p.detail for p in proposals)
+
+
 # ── Moved-file resolver ───────────────────────────────────────────────────────
 
 def _broken_internal(url: str, source_file: str = "docs/a.md") -> LinkResult:

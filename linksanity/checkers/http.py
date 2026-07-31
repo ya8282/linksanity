@@ -201,11 +201,14 @@ def _make_result(
     history: list[tuple[str, int]],
     cell: int | None = None,
 ) -> LinkResult:
-    # With follow_redirects=True, httpx resolves the full chain.
-    # A redirect is detected when the final URL differs from the original.
-    was_redirected = resolved_url.rstrip("/") != url.rstrip("/")
-    chain = [*(u for u, _ in history), resolved_url] if was_redirected and history else None
-    codes = [c for _, c in history] if was_redirected and history else None
+    # With follow_redirects=True, httpx populates `history` with one entry per
+    # redirect response actually received, and leaves it empty otherwise. Use
+    # that as the signal instead of comparing URL strings: `resolved_url` is
+    # httpx's normalized URL, and normalization alone (host casing, scheme
+    # casing, dot-segments) can differ from `url` with zero HTTP hops.
+    was_redirected = bool(history)
+    chain = [*(u for u, _ in history), resolved_url] if was_redirected else None
+    codes = [c for _, c in history] if was_redirected else None
 
     if code >= 400:
         status = LinkStatus.BROKEN

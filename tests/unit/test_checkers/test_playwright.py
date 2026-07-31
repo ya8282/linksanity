@@ -18,14 +18,25 @@ from linksanity.queue import LinkStatus, LinkType
 URL = "https://example.com/page"
 
 
-def _mock_playwright_context(status: int | None = 200, resolved_url: str = URL) -> AsyncMock:
-    """Build a mock async_playwright() context returning a fake browser/page/response."""
+def _mock_playwright_context(
+    status: int | None = 200,
+    resolved_url: str = URL,
+    *,
+    redirected: bool = False,
+) -> AsyncMock:
+    """Build a mock async_playwright() context returning a fake browser/page/response.
+
+    `redirected` stands in for Playwright's `response.request.redirected_from`:
+    non-None (truthy mock) when a real navigation-level redirect occurred, None
+    otherwise. Defaults to False so existing callers get the "no redirect" case.
+    """
     response: MagicMock | None
     if status is None:
         response = None
     else:
         response = MagicMock()
         response.status = status
+        response.request.redirected_from = MagicMock() if redirected else None
 
     page = AsyncMock()
     page.goto = AsyncMock(return_value=response)
@@ -91,3 +102,37 @@ class TestCheckCellForwarding:
         ):
             result = await check(URL, "f", 1, LinkType.EXTERNAL)
         assert result.cell is None
+
+
+class TestCheckRedirectDetection:
+    """`page.url` differing from the requested URL is not itself a redirect —
+    only `response.request.redirected_from` (a real navigation-level redirect)
+    is. Mirrors the http.py `history`-based fix for the same defect."""
+
+    @pytest.mark.asyncio
+    async def test_url_normalization_alone_is_not_a_redirect(self) -> None:
+        # page.url comes back lowercased/normalized with zero real redirects.
+        ctx = _mock_playwright_context(
+            status=200, resolved_url=URL, redirected=False
+        )
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            result = await check("https://EXAMPLE.com/page", "f", 1, LinkType.EXTERNAL)
+        assert result.status == LinkStatus.OK
+        assert result.resolved_url is None
+
+    @pytest.mark.asyncio
+    async def test_genuine_redirect_is_still_detected(self) -> None:
+        final_url = "https://example.com/canonical"
+        ctx = _mock_playwright_context(
+            status=200, resolved_url=final_url, redirected=True
+        )
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            result = await check(URL, "f", 1, LinkType.EXTERNAL)
+        assert result.status == LinkStatus.REDIRECT
+        assert result.resolved_url == final_url

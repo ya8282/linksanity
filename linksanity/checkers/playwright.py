@@ -110,7 +110,14 @@ async def check(
                     )
                 code = response.status
                 resolved = page.url
-                was_redirected = _strip(resolved) != _strip(url)
+                # `page.url` is the final navigated URL, which httpx-style string
+                # comparison would flag as "redirected" on normalization alone
+                # (host casing, scheme casing, dot-segments) even with zero HTTP
+                # hops. `request.redirected_from` is Playwright's actual signal
+                # for a real navigation-level redirect: non-None iff this
+                # request replaced an earlier one that received a redirect
+                # response.
+                was_redirected = response.request.redirected_from is not None
                 if code >= 400:
                     status = LinkStatus.BROKEN
                 elif was_redirected:
@@ -188,7 +195,9 @@ async def crawl_page(
                     await page.wait_for_load_state("networkidle", timeout=5000)
                 code = response.status
                 resolved = page.url
-                was_redirected = _strip(resolved) != _strip(url)
+                # See the matching comment in check() above: use Playwright's
+                # actual redirect signal, not a string comparison of URLs.
+                was_redirected = response.request.redirected_from is not None
                 if code >= 400:
                     status = LinkStatus.BROKEN
                 elif was_redirected:
@@ -228,10 +237,6 @@ async def crawl_page(
                 ), [], set()
         finally:
             await browser.close()
-
-
-def _strip(url: str) -> str:
-    return url.rstrip("/")
 
 
 def scope_filter(urls: list[str], start_url: str) -> list[str]:

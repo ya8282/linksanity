@@ -84,7 +84,7 @@ playwright install chromium
 ### Scan local source files
 
 ```bash
-# Scan a directory (finds all .md / .rst / .html files recursively)
+# Scan a directory (walks all supported file extensions recursively — see Supported formats above)
 linksanity scan ./docs/
 
 # Scan specific files or globs
@@ -110,7 +110,7 @@ linksanity scan ./docs/ --ignore-domains ignore.txt
 # Crawl up to 500 pages (default)
 linksanity crawl https://docs.example.com
 
-# Limit crawl depth
+# Cap total pages crawled (page budget, not a depth limit)
 linksanity crawl https://docs.example.com --max-pages 50
 
 # Ignore external domains
@@ -195,7 +195,13 @@ https://staging.example.com/*
 https://internal.corp.example.com/*
 ```
 
-**Report broken links to a GitHub Issue** — useful for scheduled runs that find regressions after merge:
+**Report broken links to a GitHub Issue** — useful for scheduled runs that find regressions after merge. Creating or updating the issue needs `issues: write`, so extend the job's `permissions:` block declared above from `contents: read` to:
+
+```yaml
+permissions:
+  contents: read
+  issues: write
+```
 
 ```yaml
       - name: Report broken links
@@ -267,7 +273,7 @@ Use `--github-issue` when you want broken links surfaced as a trackable GitHub I
 
 **When to use it:**
 
-- **Scheduled runs** — a weekly cron job catches link rot that crept in after your last merge. The issue stays open until you fix the links and the check goes green.
+- **Scheduled runs** — a weekly cron job catches link rot that crept in after your last merge. linksanity only creates or updates the issue while links are broken — it never closes or comments on it once they're fixed, so close it yourself.
 - **Repos without branch protection** — if broken links won't block a PR merge, an issue is the only signal that survives past the CI run.
 - **Large docs sites** — when dozens of links break at once (e.g. a domain migration), a single issue is easier to triage than scrolling through CI logs.
 
@@ -369,13 +375,14 @@ Note: unlike the `linksanity scan` CLI command, `scan_paths(config=None)` does *
 
 linksanity is designed to be a clean tool call for AI agents. Use `--format json` so an agent can parse structured output without screen-scraping console text.
 
-**Exit codes** are the primary signal:
+**Exit codes** are the primary signal — but they mean different things for `scan`/`crawl` than for `fix`:
 
-| Code | Meaning |
-|---|---|
-| `0` | All links OK |
-| `1` | One or more broken links |
-| `2` | Invocation error |
+| Command | `0` | `1` | `2` |
+|---|---|---|---|
+| `scan`, `crawl` | all links OK | one or more broken links | invocation error |
+| `fix` | nothing to fix | proposals exist (dry run), or were applied (`--write`) | invocation error, or `--write` refused a dirty tree |
+
+A `fix` exit of `1` is not a failure signal by itself — check `auto_applicable` in the JSON output (below) or the diff to see what happened. See [Exit codes](#exit-codes) below for the full detail.
 
 ### JSON output schema
 
@@ -411,7 +418,7 @@ Each item in the output array has:
 | `resolved_url` | Final URL after redirects; `null` when there was no redirect |
 | `cell` | Notebook cell index for `.ipynb` sources; `null` otherwise. **`line` is relative to the cell, not the file** |
 | `redirect_chain` | Every URL in the chain, original first; `null` when there was no redirect |
-| `redirect_codes` | The status code of each hop, parallel to `redirect_chain`'s hops. All 301/308 means permanently moved and safe to rewrite. `null` for cached results written before linksanity 0.2.0 |
+| `redirect_codes` | The status code of each hop, parallel to `redirect_chain`'s hops. All 301/308 means permanently moved and safe to rewrite. `null` whenever `redirect_chain` is `null` (no redirect occurred) |
 
 ### Repair loop
 
@@ -616,7 +623,7 @@ group, plus:
 
 ## Configuration file
 
-Place a `linksanity.toml` in your project root (auto-discovered):
+Discovery is a single check for `linksanity.toml` in the current working directory — linksanity does not walk upward looking for a project root. Run linksanity from the directory containing the file, or point at it explicitly with `--config path/to/linksanity.toml`. If no config is found at that path (default location or `--config`), linksanity falls back to defaults silently, with no warning:
 
 ```toml
 workers = 10
@@ -643,7 +650,7 @@ For `scan` and `crawl`:
 |---|---|
 | `0` | All links OK (or only redirects/skipped) |
 | `1` | One or more broken links |
-| `2` | Invocation error (bad arguments, missing file) |
+| `2` | Invocation error (bad arguments) |
 
 For `fix`:
 

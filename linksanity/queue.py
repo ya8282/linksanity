@@ -14,6 +14,15 @@ class LinkStatus(Enum):
     ERROR = "error"
 
 
+# What counts as a failure for exit codes and CI-facing reporters. A link
+# that exceeds --max-redirects never resolved, so it's unusable — same as
+# BROKEN/ERROR — even though it's reported separately from the "broken"
+# count in human-facing summaries (see markdown_reporter / console reporter).
+FAILING_STATUSES = frozenset(
+    {LinkStatus.BROKEN, LinkStatus.ERROR, LinkStatus.TOO_MANY_REDIRECTS}
+)
+
+
 class LinkType(Enum):
     EXTERNAL = "external"
     INTERNAL = "internal"

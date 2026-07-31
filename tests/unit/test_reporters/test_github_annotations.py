@@ -70,8 +70,10 @@ class TestLineFor:
     def test_redirect_status_is_warning_level(self) -> None:
         assert _line_for(_result(LinkStatus.REDIRECT)).startswith("::warning ")
 
-    def test_too_many_redirects_is_warning_level(self) -> None:
-        assert _line_for(_result(LinkStatus.TOO_MANY_REDIRECTS)).startswith("::warning ")
+    def test_too_many_redirects_is_error_level(self) -> None:
+        # A redirect loop never resolves, so it's an error, not a warning —
+        # same treatment as BROKEN/ERROR (see FAILING_STATUSES in queue.py).
+        assert _line_for(_result(LinkStatus.TOO_MANY_REDIRECTS)).startswith("::error ")
 
     def test_includes_file_and_line_properties(self) -> None:
         line = _line_for(_result(source_file="docs/a.md", line=42))

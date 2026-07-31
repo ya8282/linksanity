@@ -19,7 +19,7 @@ from linksanity.fixer import (
     build_wayback_proposals,
     render_diff,
 )
-from linksanity.queue import LinkResult, LinkStatus
+from linksanity.queue import FAILING_STATUSES, LinkResult
 from linksanity.reporters import report
 from linksanity.scanner import run_scan
 
@@ -334,7 +334,7 @@ def scan(
     if _annotations_enabled(config):
         _run_annotations_reporter(results)
 
-    broken = sum(1 for r in results if r.status in (LinkStatus.BROKEN, LinkStatus.ERROR))
+    broken = sum(1 for r in results if r.status in FAILING_STATUSES)
     raise typer.Exit(1 if broken else 0)
 
 
@@ -733,5 +733,5 @@ def crawl(
         _run_annotations_reporter(results)
 
     summary = queue.summary()
-    broken = summary.get("broken", 0) + summary.get("error", 0)
+    broken = sum(summary.get(s.value, 0) for s in FAILING_STATUSES)
     raise typer.Exit(1 if broken else 0)

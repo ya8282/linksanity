@@ -12,7 +12,9 @@ import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
+import httpx
 import pytest
+import respx
 from typer.testing import CliRunner
 
 from linksanity.cli import app
@@ -104,6 +106,30 @@ class TestCrawlBasic:
         )
         assert Path(out_path).exists()
         assert len(Path(out_path).read_text()) > 0
+
+
+# ── Too many redirects (linksanity-9vj) ────────────────────────────────────────
+
+class TestCrawlTooManyRedirects:
+    @respx.mock
+    def test_redirect_loop_exits_1(self, site_url: str) -> None:
+        # loop.html links to an external URL that redirects forever — crawl's
+        # httpx-based external link check must exceed --max-redirects.
+        respx.head("https://external.example.com/loop-a").mock(
+            return_value=httpx.Response(
+                301, headers={"location": "https://external.example.com/loop-b"}
+            )
+        )
+        respx.head("https://external.example.com/loop-b").mock(
+            return_value=httpx.Response(
+                301, headers={"location": "https://external.example.com/loop-a"}
+            )
+        )
+        result = runner.invoke(
+            app,
+            ["crawl", f"{site_url}/loop.html", "--max-redirects", "2"],
+        )
+        assert result.exit_code == 1, result.stdout
 
 
 # ── --format validation (regression: crawl never checked --format) ─────────────

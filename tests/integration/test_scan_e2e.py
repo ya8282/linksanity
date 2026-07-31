@@ -313,6 +313,22 @@ class TestScanHTTPEdgeCases:
         result = runner.invoke(app, ["scan", str(f)])
         assert result.exit_code == 0, result.output
 
+    @respx.mock
+    def test_redirect_loop_exits_1(self, tmp_path: Path) -> None:
+        # /a and /b redirect to each other forever — exceeds --max-redirects
+        respx.head("https://example.com/a").mock(
+            return_value=httpx.Response(301, headers={"location": "https://example.com/b"})
+        )
+        respx.head("https://example.com/b").mock(
+            return_value=httpx.Response(301, headers={"location": "https://example.com/a"})
+        )
+
+        f = tmp_path / "a.md"
+        f.write_text("[link](https://example.com/a)\n")
+        result = runner.invoke(app, ["scan", str(f), "--max-redirects", "2"])
+        assert result.exit_code == 1, result.stdout
+        assert "too_many_redirects=1" in result.stdout
+
 
 # ── --offline flag (Task 37) ────────────────────────────────────────────────
 
@@ -372,6 +388,30 @@ class TestScanBaseline:
             app, ["scan", str(f), "--baseline", str(tmp_path / "no-such-file.json")]
         )
         assert result.exit_code == 1
+
+    @respx.mock
+    def test_known_redirect_loop_exits_0_against_baseline(self, tmp_path: Path) -> None:
+        # A too-many-redirects link, once baselined, is suppressed the same
+        # way a baselined broken link is (linksanity-9vj).
+        respx.head("https://example.com/a").mock(
+            return_value=httpx.Response(301, headers={"location": "https://example.com/b"})
+        )
+        respx.head("https://example.com/b").mock(
+            return_value=httpx.Response(301, headers={"location": "https://example.com/a"})
+        )
+
+        f = tmp_path / "a.md"
+        f.write_text("[link](https://example.com/a)\n")
+
+        baseline = tmp_path / "baseline.json"
+        runner.invoke(
+            app,
+            ["scan", str(f), "--max-redirects", "2", "--format", "json", "--output", str(baseline)],
+        )
+        assert json.loads(baseline.read_text())[0]["status"] == "too_many_redirects"
+
+        result = runner.invoke(app, ["scan", str(f), "--max-redirects", "2", "--baseline", str(baseline)])
+        assert result.exit_code == 0, result.stdout
 
 
 # ── New format wiring (Task 29) ────────────────────────────────────────────────

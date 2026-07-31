@@ -5,12 +5,15 @@ from __future__ import annotations
 import sys
 from typing import IO
 
-from linksanity.queue import LinkResult, LinkStatus
+from linksanity.queue import FAILING_STATUSES, LinkResult, LinkStatus
 
 _MAX_PER_LEVEL = 10  # GitHub renders at most 10 annotations per level per step
 
-_ERROR_STATUSES = {LinkStatus.BROKEN, LinkStatus.ERROR}
-_WARNING_STATUSES = {LinkStatus.REDIRECT, LinkStatus.TOO_MANY_REDIRECTS}
+# A redirect loop never resolves, so it's treated the same as BROKEN/ERROR
+# here — see FAILING_STATUSES in queue.py, which is the single source of
+# truth for what counts as a failure across the CLI's exit codes too.
+_ERROR_STATUSES = FAILING_STATUSES
+_WARNING_STATUSES = {LinkStatus.REDIRECT}
 
 
 def _esc(value: str) -> str:

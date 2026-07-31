@@ -713,8 +713,8 @@ For `scan` and `crawl`:
 
 | Code | Meaning |
 |---|---|
-| `0` | All links OK (or only redirects/skipped) |
-| `1` | One or more broken links |
+| `0` | All links OK (or only plain redirects/skipped) |
+| `1` | One or more broken links, errors, or redirect loops (`--max-redirects` exceeded) |
 | `2` | Invocation error (bad arguments) |
 
 For `fix`:

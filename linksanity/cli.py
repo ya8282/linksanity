@@ -552,18 +552,18 @@ def fix(
             # Keep --format json structurally identical whether or not there are
             # proposals: an empty array, not silence, so a parser downstream
             # doesn't have to special-case "no output at all".
-            _emit(_render_fix_output(proposals, config.format), output)
+            _emit(_render_fix_output(proposals, config.format), config.output)
         raise typer.Exit(0)
 
     if not write:
-        _emit(_render_fix_output(proposals, config.format), output)
+        _emit(_render_fix_output(proposals, config.format), config.output)
         raise typer.Exit(1)
 
     _check_clean_tree(proposals, force)
     applied, modified = apply_proposals(proposals)
 
     if config.format == "json":
-        _emit(_render_fix_output(proposals, config.format), output)
+        _emit(_render_fix_output(proposals, config.format), config.output)
     else:
         lines = (
             [f"Applied {applied} fix(es) across {len(modified)} file(s):"]
@@ -572,7 +572,7 @@ def fix(
             else ["No auto-applicable fixes to write."]
         )
         lines.extend(_render_suggestions(proposals))
-        _emit("\n".join(lines) + "\n", output)
+        _emit("\n".join(lines) + "\n", config.output)
 
     raise typer.Exit(1)
 

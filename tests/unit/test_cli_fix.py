@@ -392,6 +392,16 @@ class TestJsonOutput:
             runner.invoke(app, ["fix", str(doc), "--format", "json", "--output", str(out)])
         assert json.loads(out.read_text(encoding="utf-8"))[0]["kind"] == "redirect"
 
+    def test_output_file_written_console_format(self, doc: Path, tmp_path: Path) -> None:
+        # Same as test_output_file_written but for the default (console)
+        # format. Both hit the same _emit call site (cli.py's "not write"
+        # branch); the difference is config.format, not the call site.
+        out = tmp_path / "fixes.txt"
+        with _patch_proposals([_proposal(str(doc))]):
+            result = runner.invoke(app, ["fix", str(doc), "--output", str(out)])
+        assert result.stdout == ""
+        assert f"-See [docs]({OLD}) here" in out.read_text(encoding="utf-8")
+
     def test_unwritable_output_exits_two(self, doc: Path, tmp_path: Path) -> None:
         bad = tmp_path / "no-such-dir" / "fixes.json"
         with _patch_proposals([_proposal(str(doc))]):
@@ -419,6 +429,128 @@ class TestJsonOutput:
             )
         assert result.exit_code == 0
         assert json.loads(out.read_text(encoding="utf-8")) == []
+
+
+# ── output consistency with scan/crawl (linksanity-5iu) ────────────────────────
+
+class TestOutputFollowsConfig:
+    """`fix` has four _emit call sites (nothing-to-fix, not-write, write+json,
+    write+console) and every one of them must read config.output, matching
+    scan and crawl, rather than the raw --output flag. Today the two values
+    are always identical (the only way to populate config.output for `fix`
+    is the --output flag itself, via overrides["output"] in cli.fix), so a
+    real command-line invocation can't produce a live divergence without
+    adding a linksanity.toml `output` key -- out of scope for this bead.
+    Instead each test below patches _load_config_or_exit directly so
+    config.output and the --output flag value diverge, and asserts the file
+    actually written follows config.output while the flag path is never
+    created. Each test below drives exactly one of the four call sites --
+    together they pin all four to config.output (mutating any single site
+    back to the raw `output` variable fails its corresponding test here)
+    without touching load_config or the TOML key table."""
+
+    def test_nothing_to_fix_json_writes_to_config_output(
+        self, doc: Path, tmp_path: Path
+    ) -> None:
+        """Drives cli.py's nothing-to-fix branch (--format json, no
+        proposals)."""
+        from linksanity.config import Config
+
+        flag_path = tmp_path / "flag-target.json"
+        config_path = tmp_path / "config-target.json"
+        diverged_config = Config(format="json", output=str(config_path))
+
+        with (
+            _patch_proposals([]),
+            patch("linksanity.cli._load_config_or_exit", return_value=diverged_config),
+        ):
+            result = runner.invoke(
+                app,
+                ["fix", str(doc), "--format", "json", "--output", str(flag_path)],
+            )
+
+        assert result.exit_code == 0, result.stderr
+        assert not flag_path.exists()
+        assert json.loads(config_path.read_text(encoding="utf-8")) == []
+
+    def test_dry_run_writes_to_config_output(
+        self, doc: Path, tmp_path: Path
+    ) -> None:
+        """Drives cli.py's `not write` branch (--format json, no --write)."""
+        from linksanity.config import Config
+
+        flag_path = tmp_path / "flag-target.json"
+        config_path = tmp_path / "config-target.json"
+        diverged_config = Config(format="json", output=str(config_path))
+
+        with (
+            _patch_proposals([_proposal(str(doc))]),
+            patch("linksanity.cli._load_config_or_exit", return_value=diverged_config),
+        ):
+            result = runner.invoke(
+                app,
+                ["fix", str(doc), "--format", "json", "--output", str(flag_path)],
+            )
+
+        assert result.exit_code == 1, result.stderr
+        assert not flag_path.exists()
+        assert json.loads(config_path.read_text(encoding="utf-8"))[0]["kind"] == "redirect"
+
+    def test_write_json_writes_to_config_output(
+        self, doc: Path, tmp_path: Path
+    ) -> None:
+        """Drives cli.py's `--write` + json branch. `doc` lives outside any
+        git repo, so _check_clean_tree proceeds with its "not a git
+        repository" note (see TestDirtyTreeGuard.test_non_repo_proceeds_with_a_note)
+        rather than needing a real repo fixture here."""
+        from linksanity.config import Config
+
+        flag_path = tmp_path / "flag-target.json"
+        config_path = tmp_path / "config-target.json"
+        diverged_config = Config(format="json", output=str(config_path))
+
+        with (
+            _patch_proposals([_proposal(str(doc))]),
+            patch("linksanity.cli._load_config_or_exit", return_value=diverged_config),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "fix", str(doc),
+                    "--format", "json",
+                    "--output", str(flag_path),
+                    "--write",
+                ],
+            )
+
+        assert result.exit_code == 1, result.stderr
+        assert not flag_path.exists()
+        assert json.loads(config_path.read_text(encoding="utf-8"))[0]["kind"] == "redirect"
+
+    def test_write_console_writes_to_config_output(
+        self, doc: Path, tmp_path: Path
+    ) -> None:
+        """Drives cli.py's `--write` + console branch (the applied-fixes
+        summary, not the dry-run diff). Same non-repo rationale as
+        test_write_json_writes_to_config_output above."""
+        from linksanity.config import Config
+
+        flag_path = tmp_path / "flag-target.txt"
+        config_path = tmp_path / "config-target.txt"
+        diverged_config = Config(format="console", output=str(config_path))
+
+        with (
+            _patch_proposals([_proposal(str(doc))]),
+            patch("linksanity.cli._load_config_or_exit", return_value=diverged_config),
+        ):
+            result = runner.invoke(
+                app,
+                ["fix", str(doc), "--output", str(flag_path), "--write"],
+            )
+
+        assert result.exit_code == 1, result.stderr
+        assert not flag_path.exists()
+        assert "Applied 1 fix" in config_path.read_text(encoding="utf-8")
 
 
 # ── format precedence: linksanity.toml `format` key vs --format (linksanity-u65) ─

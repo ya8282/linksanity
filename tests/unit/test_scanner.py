@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import respx
 
+from linksanity import cache as cache_module
 from linksanity.config import Config
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 from linksanity.scanner import _collect_docbook_ids, run_scan
@@ -104,6 +105,7 @@ class TestCacheIntegration:
         doc.write_text("[link](https://example.com)\n")
         cache_file = tmp_path / "cache.json"
         cache_file.write_text(json.dumps({
+            "version": cache_module._CACHE_VERSION,
             "urls": {
                 "https://example.com": {
                     "source_file": str(doc), "line": 1, "link_type": "external",
@@ -148,6 +150,7 @@ class TestOfflineCacheBypass:
         doc.write_text("[link](https://example.com)\n")
         cache_file = tmp_path / "cache.json"
         cache_file.write_text(json.dumps({
+            "version": cache_module._CACHE_VERSION,
             "urls": {
                 "https://example.com": {
                     "source_file": str(doc), "line": 1, "link_type": "external",

@@ -14,6 +14,14 @@ from typing import Any
 
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 
+# Bump this whenever a change alters how a LinkResult is *classified*
+# (status, redirect_codes, http_code interpretation, etc — see linksanity-vid,
+# linksanity-f8t, linksanity-9vj for examples). A payload written under an
+# older version is treated as cold on load, so bumping this is what forces a
+# warm cache to stop replaying pre-fix classifications instead of serving
+# them for up to `cache_ttl` seconds.
+_CACHE_VERSION = 1
+
 
 class Cache:
     """Reads/writes a JSON file mapping URL -> last check result + timestamp."""
@@ -31,6 +39,21 @@ class Cache:
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
+            return
+        version = raw.get("version") if isinstance(raw, dict) else None
+        version_matches = (
+            isinstance(version, int)
+            and not isinstance(version, bool)
+            and version == _CACHE_VERSION
+        )
+        if not isinstance(raw, dict) or not version_matches:
+            # Cold cache: missing/foreign/mismatched version. This also covers
+            # every pre-versioning cache file, which has no "version" key at
+            # all. Discard last_commit too, not just the entries -- otherwise
+            # an --incremental run would trust a stale commit ref and skip
+            # files whose links need re-checking under the new classification
+            # rules. Leave the on-disk file untouched; the next save()
+            # overwrites it naturally.
             return
         self._entries = raw.get("urls", {})
         self.last_commit = raw.get("last_commit")
@@ -52,8 +75,10 @@ class Cache:
             resolved_url=entry.get("resolved_url"),
             error=entry.get("error"),
             redirect_chain=entry.get("redirect_chain"),
-            # Entries written before redirect_codes existed degrade to None,
-            # which reads as "not known permanent" — suggestion-only, never auto-applied.
+            # .get() is defensive, not a compatibility shim: every version-1
+            # entry is written by save(), which always emits this field, so
+            # the fallback to None should be unreachable in practice. It reads
+            # as "not known permanent" -- suggestion-only, never auto-applied.
             redirect_codes=entry.get("redirect_codes"),
         )
 
@@ -73,6 +98,7 @@ class Cache:
 
     def save(self, *, last_commit: str | None = None) -> None:
         payload = {
+            "version": _CACHE_VERSION,
             "urls": self._entries,
             "last_commit": last_commit if last_commit is not None else self.last_commit,
         }

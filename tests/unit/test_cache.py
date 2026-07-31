@@ -6,6 +6,7 @@ import json
 import time
 from pathlib import Path
 
+from linksanity import cache as cache_module
 from linksanity.cache import Cache
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 
@@ -49,37 +50,6 @@ class TestRedirectCodes:
         assert hit is not None
         assert hit.redirect_codes == [301, 308]
 
-    def test_entry_written_before_the_field_existed_degrades_to_none(
-        self, tmp_path: Path
-    ) -> None:
-        # An 0.1.x cache file has no redirect_codes key. Reading it must not
-        # raise, and the result must not look like a permanent redirect.
-        path = tmp_path / "cache.json"
-        path.write_text(
-            json.dumps(
-                {
-                    "urls": {
-                        "https://example.com/page": {
-                            "source_file": "docs/index.md",
-                            "line": 3,
-                            "link_type": "external",
-                            "status": "redirect",
-                            "http_code": 301,
-                            "resolved_url": "https://example.com/new",
-                            "error": None,
-                            "redirect_chain": ["https://example.com/page"],
-                            "checked_at": time.time(),
-                        }
-                    },
-                    "last_commit": None,
-                }
-            ),
-            encoding="utf-8",
-        )
-        hit = Cache(path, ttl=3600).get("https://example.com/page")
-        assert hit is not None
-        assert hit.redirect_codes is None
-
 
 class TestPersistence:
     def test_save_writes_json_file(self, tmp_path: Path) -> None:
@@ -91,6 +61,13 @@ class TestPersistence:
         data = json.loads(path.read_text())
         assert data["last_commit"] == "abc123"
         assert "https://example.com/page" in data["urls"]
+
+    def test_save_writes_version_key(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.json"
+        cache = Cache(path, ttl=3600)
+        cache.save()
+        data = json.loads(path.read_text())
+        assert data["version"] == cache_module._CACHE_VERSION
 
     def test_reload_from_disk_returns_same_entry(self, tmp_path: Path) -> None:
         path = tmp_path / "cache.json"
@@ -132,6 +109,7 @@ class TestTtlExpiry:
     def test_expired_entry_returns_none(self, tmp_path: Path) -> None:
         path = tmp_path / "cache.json"
         payload = {
+            "version": cache_module._CACHE_VERSION,
             "urls": {
                 "https://example.com/page": {
                     "source_file": "docs/index.md",
@@ -148,5 +126,127 @@ class TestTtlExpiry:
             "last_commit": None,
         }
         path.write_text(json.dumps(payload))
+        cache = Cache(path, ttl=3600)
+        assert cache.get("https://example.com/page") is None
+
+
+class TestVersioning:
+    """A cache file written under a different (or absent) version is cold:
+    its entries and last_commit are ignored, and the file itself is left
+    untouched until the next explicit save()."""
+
+    def _no_version_payload(self) -> dict[str, object]:
+        return {
+            "urls": {
+                "https://example.com/page": {
+                    "source_file": "docs/index.md",
+                    "line": 3,
+                    "link_type": "external",
+                    "status": "ok",
+                    "http_code": 200,
+                    "resolved_url": None,
+                    "error": None,
+                    "redirect_chain": None,
+                    "redirect_codes": None,
+                    "checked_at": time.time(),
+                }
+            },
+            "last_commit": "stale-commit-sha",
+        }
+
+    def test_missing_version_key_is_cold(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.json"
+        path.write_text(json.dumps(self._no_version_payload()), encoding="utf-8")
+        cache = Cache(path, ttl=3600)
+        assert cache.get("https://example.com/page") is None
+
+    def test_wrong_version_is_cold(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.json"
+        payload = self._no_version_payload()
+        payload["version"] = cache_module._CACHE_VERSION + 1
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        cache = Cache(path, ttl=3600)
+        assert cache.get("https://example.com/page") is None
+
+    def test_current_version_round_trips(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.json"
+        cache = Cache(path, ttl=3600)
+        cache.put(_result())
+        cache.save(last_commit="abc123")
+
+        reloaded = Cache(path, ttl=3600)
+        hit = reloaded.get("https://example.com/page")
+        assert hit is not None
+        assert hit.status == LinkStatus.OK
+        assert reloaded.last_commit == "abc123"
+
+    def test_version_mismatch_discards_last_commit(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.json"
+        path.write_text(json.dumps(self._no_version_payload()), encoding="utf-8")
+        cache = Cache(path, ttl=3600)
+        assert cache.last_commit is None
+
+    def test_loading_mismatched_cache_does_not_modify_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.json"
+        original_bytes = json.dumps(self._no_version_payload()).encode("utf-8")
+        path.write_bytes(original_bytes)
+        Cache(path, ttl=3600)
+        assert path.read_bytes() == original_bytes
+
+    def test_non_dict_payload_is_cold(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.json"
+        path.write_text(json.dumps(["not", "a", "dict"]), encoding="utf-8")
+        cache = Cache(path, ttl=3600)
+        assert cache.get("https://example.com/page") is None
+        assert cache.last_commit is None
+
+    def test_pre_versioning_entry_is_cold_not_degraded(self, tmp_path: Path) -> None:
+        # A pre-linksanity-u87 cache file has neither a "version" key nor a
+        # redirect_codes field. Reading it must not raise, and -- since the
+        # whole point of versioning is that an unversioned payload is a
+        # different behaviour era -- it must not be replayed at all, rather
+        # than partially degraded.
+        path = tmp_path / "cache.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "urls": {
+                        "https://example.com/page": {
+                            "source_file": "docs/index.md",
+                            "line": 3,
+                            "link_type": "external",
+                            "status": "redirect",
+                            "http_code": 301,
+                            "resolved_url": "https://example.com/new",
+                            "error": None,
+                            "redirect_chain": ["https://example.com/page"],
+                            "checked_at": time.time(),
+                        }
+                    },
+                    "last_commit": None,
+                }
+            ),
+            encoding="utf-8",
+        )
+        hit = Cache(path, ttl=3600).get("https://example.com/page")
+        assert hit is None
+
+    def test_version_as_float_is_cold(self, tmp_path: Path) -> None:
+        # 1.0 == 1 in Python, but a float is not the int contract the version
+        # gate promises -- it must not be treated as a match.
+        path = tmp_path / "cache.json"
+        payload = self._no_version_payload()
+        payload["version"] = float(cache_module._CACHE_VERSION)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        cache = Cache(path, ttl=3600)
+        assert cache.get("https://example.com/page") is None
+
+    def test_version_as_bool_is_cold(self, tmp_path: Path) -> None:
+        # True == 1 in Python, and isinstance(True, int) is True, so this
+        # needs an explicit bool exclusion, not just an isinstance(int) check.
+        path = tmp_path / "cache.json"
+        payload = self._no_version_payload()
+        payload["version"] = True
+        path.write_text(json.dumps(payload), encoding="utf-8")
         cache = Cache(path, ttl=3600)
         assert cache.get("https://example.com/page") is None

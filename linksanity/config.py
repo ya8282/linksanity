@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import fnmatch
 import tomllib
 from dataclasses import dataclass, field
@@ -85,32 +86,81 @@ def _load_toml(path: Path) -> dict[str, object]:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
 
 
+def _location(path: Path | None) -> str:
+    return f" in {path}" if path is not None else ""
+
+
+def _type_name(v: object) -> str:
+    """Render a value's type for an error message: a short, user-legible
+    label (str, int, list, table, date, ...) rather than a raw repr, which
+    could dump an entire table or list into the user's terminal.
+    """
+    if isinstance(v, bool):
+        return "bool"
+    if isinstance(v, int):
+        return "int"
+    if isinstance(v, float):
+        return "float"
+    if isinstance(v, str):
+        return "str"
+    if isinstance(v, list):
+        return "list"
+    if isinstance(v, dict):
+        return "table"
+    if isinstance(v, (datetime.date, datetime.time)):
+        # covers date, datetime, and time -- tomllib's three date/time types
+        return "date"
+    return type(v).__name__
+
+
 def _int(data: dict[str, object], key: str, default: int, path: Path | None = None) -> int:
-    v = data.get(key, default)
-    if not isinstance(v, (int, float, str)):
+    if key not in data:
         return default
+    v = data[key]
+    if not isinstance(v, (int, float, str)):
+        raise ConfigError(
+            f"invalid value for '{key}'{_location(path)}: expected an integer, got {_type_name(v)}"
+        )
     try:
         return int(v)
     except ConfigError:
         raise
     except (ValueError, OverflowError) as exc:
-        location = f" in {path}" if path is not None else ""
+        location = _location(path)
         raise ConfigError(f"invalid value for '{key}'{location}: {v!r} is not a valid integer") from exc
 
 
-def _bool(data: dict[str, object], key: str, default: bool) -> bool:
-    v = data.get(key, default)
-    return bool(v) if isinstance(v, (bool, int)) else default
+def _bool(data: dict[str, object], key: str, default: bool, path: Path | None = None) -> bool:
+    if key not in data:
+        return default
+    v = data[key]
+    if not isinstance(v, (bool, int)):
+        raise ConfigError(
+            f"invalid value for '{key}'{_location(path)}: expected a boolean, got {_type_name(v)}"
+        )
+    return bool(v)
 
 
-def _str(data: dict[str, object], key: str, default: str) -> str:
-    v = data.get(key, default)
-    return str(v) if isinstance(v, str) else default
+def _str(data: dict[str, object], key: str, default: str, path: Path | None = None) -> str:
+    if key not in data:
+        return default
+    v = data[key]
+    if not isinstance(v, str):
+        raise ConfigError(
+            f"invalid value for '{key}'{_location(path)}: expected a string, got {_type_name(v)}"
+        )
+    return v
 
 
-def _bool_or_none(data: dict[str, object], key: str) -> bool | None:
-    v = data.get(key)
-    return bool(v) if isinstance(v, (bool, int)) else None
+def _bool_or_none(data: dict[str, object], key: str, path: Path | None = None) -> bool | None:
+    if key not in data:
+        return None
+    v = data[key]
+    if not isinstance(v, (bool, int)):
+        raise ConfigError(
+            f"invalid value for '{key}'{_location(path)}: expected a boolean, got {_type_name(v)}"
+        )
+    return bool(v)
 
 
 def load_config(
@@ -125,16 +175,26 @@ def load_config(
         data = _load_toml(search_path)
 
     def _domain_set(key: str) -> set[str]:
-        raw = data.get(key, [])
-        if isinstance(raw, list):
-            return {str(d).lower() for d in raw}
-        return set()
+        if key not in data:
+            return set()
+        raw = data[key]
+        if not isinstance(raw, list):
+            raise ConfigError(
+                f"invalid value for '{key}'{_location(search_path)}: "
+                f"expected a list of strings, got {_type_name(raw)}"
+            )
+        return {str(d).lower() for d in raw}
 
     def _url_set(key: str) -> set[str]:
-        raw = data.get(key, [])
-        if isinstance(raw, list):
-            return {str(u) for u in raw}
-        return set()
+        if key not in data:
+            return set()
+        raw = data[key]
+        if not isinstance(raw, list):
+            raise ConfigError(
+                f"invalid value for '{key}'{_location(search_path)}: "
+                f"expected a list of strings, got {_type_name(raw)}"
+            )
+        return {str(u) for u in raw}
 
     cfg = Config(
         workers=_int(data, "workers", Config.workers, search_path),
@@ -143,24 +203,24 @@ def load_config(
         ),
         timeout=_int(data, "timeout", Config.timeout, search_path),
         retry=_int(data, "retry", Config.retry, search_path),
-        check_anchors=_bool(data, "check_anchors", Config.check_anchors),
-        check_images=_bool(data, "check_images", Config.check_images),
-        myst=_bool(data, "myst", Config.myst),
-        link_style=_str(data, "link_style", "") or None,
+        check_anchors=_bool(data, "check_anchors", Config.check_anchors, search_path),
+        check_images=_bool(data, "check_images", Config.check_images, search_path),
+        myst=_bool(data, "myst", Config.myst, search_path),
+        link_style=_str(data, "link_style", "", search_path) or None,
         max_pages=_int(data, "max_pages", Config.max_pages, search_path),
         ignore_domains=_domain_set("ignore_domains"),
         js_domains=_domain_set("js_domains"),
         skip_urls=_url_set("skip_urls"),
-        block_analytics=_bool(data, "block_analytics", Config.block_analytics),
-        format=_str(data, "format", Config.format),
+        block_analytics=_bool(data, "block_analytics", Config.block_analytics, search_path),
+        format=_str(data, "format", Config.format, search_path),
         max_redirects=_int(data, "max_redirects", Config.max_redirects, search_path),
-        cache_file=_str(data, "cache_file", "") or None,
+        cache_file=_str(data, "cache_file", "", search_path) or None,
         cache_ttl=_int(data, "cache_ttl", Config.cache_ttl, search_path),
-        incremental=_bool(data, "incremental", Config.incremental),
-        since=_str(data, "since", "") or None,
-        baseline=_str(data, "baseline", "") or None,
-        annotations=_bool_or_none(data, "annotations"),
-        offline=_bool(data, "offline", Config.offline),
+        incremental=_bool(data, "incremental", Config.incremental, search_path),
+        since=_str(data, "since", "", search_path) or None,
+        baseline=_str(data, "baseline", "", search_path) or None,
+        annotations=_bool_or_none(data, "annotations", search_path),
+        offline=_bool(data, "offline", Config.offline, search_path),
     )
 
     # CLI overrides replace file values when explicitly provided

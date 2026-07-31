@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from linksanity.config import Config, load_config, url_is_skipped
+from linksanity.config import Config, ConfigError, load_config, url_is_skipped
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
@@ -171,6 +171,125 @@ class TestOfflineField:
         p.write_text("offline = true\n")
         cfg = load_config(toml_path=p, offline=None)
         assert cfg.offline is True
+
+
+class TestWronglyTypedValuesRaise:
+    """A wrongly-typed value for a key must raise ConfigError naming the key
+    AND the expected type, not silently fall back to the default
+    (linksanity-ap7). Covers both the container keys
+    (ignore_domains/js_domains/skip_urls) and the scalar helpers
+    (_int/_bool/_str/_bool_or_none)."""
+
+    def test_ignore_domains_non_list_string(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text('ignore_domains = "a-string"\n')
+        with pytest.raises(ConfigError, match=r"ignore_domains.*expected a list of strings"):
+            load_config(toml_path=p)
+
+    def test_js_domains_non_list_table(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("js_domains = {a = 1}\n")
+        with pytest.raises(ConfigError, match=r"js_domains.*expected a list of strings"):
+            load_config(toml_path=p)
+
+    def test_skip_urls_non_list_int(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("skip_urls = 42\n")
+        with pytest.raises(ConfigError, match=r"skip_urls.*expected a list of strings"):
+            load_config(toml_path=p)
+
+    def test_int_key_given_a_list(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = [1, 2]\n")
+        with pytest.raises(ConfigError, match=r"workers.*expected an integer"):
+            load_config(toml_path=p)
+
+    def test_int_key_given_a_table(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("[workers]\nn = 1\n")
+        with pytest.raises(ConfigError, match=r"workers.*expected an integer"):
+            load_config(toml_path=p)
+
+    def test_str_key_given_a_list(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("link_style = [1, 2]\n")
+        with pytest.raises(ConfigError, match=r"link_style.*expected a string"):
+            load_config(toml_path=p)
+
+    def test_bool_key_given_a_string(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text('check_anchors = "yes"\n')
+        with pytest.raises(ConfigError, match=r"check_anchors.*expected a boolean"):
+            load_config(toml_path=p)
+
+    def test_annotations_given_a_string(self, tmp_path: Path) -> None:
+        """annotations goes through _bool_or_none, not _bool -- exercise it
+        directly rather than relying on _bool's coverage to stand in for it."""
+        p = tmp_path / "linksanity.toml"
+        p.write_text('annotations = "not-a-bool"\n')
+        with pytest.raises(ConfigError, match=r"annotations.*expected a boolean"):
+            load_config(toml_path=p)
+
+    def test_int_key_given_a_bare_toml_date(self, tmp_path: Path) -> None:
+        """A bare TOML date (no quotes) parses to datetime.date, which is
+        neither int/float/str -- _int must reject it and report the actual
+        type as 'date', not silently stringify it."""
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = 2026-07-31\n")
+        with pytest.raises(ConfigError, match=r"workers.*expected an integer.*got date"):
+            load_config(toml_path=p)
+
+    def test_error_names_the_file(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("skip_urls = 42\n")
+        with pytest.raises(ConfigError, match=str(p)):
+            load_config(toml_path=p)
+
+
+class TestAllKeysAbsentStillLoads:
+    """A config file (or no config file at all) with every key absent must
+    load defaults without error -- the type check must never fire on the
+    fallback default itself."""
+
+    def test_no_file_loads_defaults(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "nonexistent.toml")
+        assert cfg == Config()
+
+    def test_empty_file_loads_defaults(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("")
+        cfg = load_config(toml_path=p)
+        assert cfg == Config()
+
+    def test_unrelated_key_present_still_loads_defaults(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("timeout = 30\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.workers == Config.workers
+        assert cfg.annotations is None
+
+
+class TestAcceptedCoercionsStillWork:
+    """The type-check tightening must not narrow what was already accepted --
+    only close the silent-fallback hole."""
+
+    def test_int_key_accepts_numeric_string(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text('workers = "8"\n')
+        cfg = load_config(toml_path=p)
+        assert cfg.workers == 8
+
+    def test_int_key_accepts_float(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = 8.0\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.workers == 8
+
+    def test_bool_key_accepts_int_one(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("check_anchors = 1\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.check_anchors is True
 
 
 class TestUrlIsSkipped:

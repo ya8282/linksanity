@@ -335,6 +335,23 @@ class TestMalformedConfigIsAnInvocationError:
         assert str(cfg) in result.stderr
         assert "workers" in result.stderr
 
+    def test_wrong_container_type_for_list_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """ignore_domains/js_domains/skip_urls set to a non-list must exit 2
+        rather than silently becoming an empty set (linksanity-ap7)."""
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_text('skip_urls = "a-string"\n')
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--offline"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert str(cfg) in result.stderr
+        assert "skip_urls" in result.stderr
+
     def test_infinite_float_for_int_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

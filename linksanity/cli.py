@@ -10,7 +10,7 @@ from pathlib import Path
 
 import typer
 
-from linksanity.config import Config, load_config
+from linksanity.config import Config, ConfigError, load_config
 from linksanity.fixer import (
     FixProposal,
     apply_proposals,
@@ -124,6 +124,19 @@ def _resolve_config_path(config_file: str | None, format: str, output: str | Non
     discovered_path = _discover_config()
     _announce_config(discovered_path, format, output)
     return discovered_path
+
+
+def _load_config_or_exit(config_path: Path | None, **overrides: object) -> Config:
+    """Load linksanity.toml, turning a malformed or wrongly-typed file into
+    a clean invocation error (exit 2) instead of a raw traceback. Mirrors
+    the "--config file not found" error already raised by
+    _resolve_config_path so both bad-input paths look and feel the same.
+    """
+    try:
+        return load_config(config_path, **overrides)
+    except ConfigError as exc:
+        typer.echo(f"[linksanity] {exc}", err=True)
+        raise typer.Exit(2) from exc
 
 
 @app.command()
@@ -258,7 +271,7 @@ def scan(
         overrides["skip_urls"] = skip_set
 
     config_path = _resolve_config_path(config_file, format, output)
-    config = load_config(config_path, **overrides)
+    config = _load_config_or_exit(config_path, **overrides)
 
     if config.js_domains:
         try:
@@ -495,7 +508,7 @@ def fix(
         overrides["skip_urls"] = skip_set
 
     config_path = _resolve_config_path(config_file, format, output)
-    config = load_config(config_path, **overrides)
+    config = _load_config_or_exit(config_path, **overrides)
 
     if config.js_domains:
         try:
@@ -646,7 +659,7 @@ def crawl(
         overrides["block_analytics"] = True
 
     config_path = _resolve_config_path(config_file, format, output)
-    config = load_config(config_path, **overrides)
+    config = _load_config_or_exit(config_path, **overrides)
 
     if github_issue and not repo and not config.github_repo:
         typer.echo("[linksanity] --repo is required with --github-issue", err=True)

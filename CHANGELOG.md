@@ -67,6 +67,10 @@ linksanity in other tools.
 
 - `--js-domains` now fails with an actionable message when Playwright is not
   installed, instead of an `ImportError` from deep in the router
+- A malformed, wrongly-typed, non-UTF-8, or unreadable `linksanity.toml` now
+  exits 2 with a message naming the file, instead of a raw traceback and
+  exit 1. `load_config` raises the new `linksanity.ConfigError` (a
+  `ValueError` subclass, so an existing `except ValueError` still catches it)
 - `scan_paths()` no longer crashes when called from a running event loop
 - Parser line numbers corrected for Markdown, reStructuredText, and HTML
 - Rich markup in free-text fields is escaped in the console reporter, so a URL

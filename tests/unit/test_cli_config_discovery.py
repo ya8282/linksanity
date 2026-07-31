@@ -11,6 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from linksanity.cli import _announce_config, _discover_config, app
+from linksanity.config import ConfigError
 
 runner = CliRunner()
 
@@ -297,6 +298,211 @@ class TestFixConfigDiscoveryEndToEnd:
 
         assert result.exit_code == 2
         assert "not found" in result.stderr
+
+
+class TestMalformedConfigIsAnInvocationError:
+    """A malformed or wrongly-typed linksanity.toml must exit 2 with a clean,
+    file-naming message on stderr -- never a raw traceback with exit 1, which
+    is reserved for genuine broken-link findings (linksanity-foj)."""
+
+    def test_invalid_toml_syntax(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_text("workers = = 5\n")
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--offline"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert str(cfg) in result.stderr
+        assert "invalid TOML syntax" in result.stderr
+
+    def test_wrong_scalar_type_for_int_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_text('workers = "not-a-number"\n')
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--offline"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert str(cfg) in result.stderr
+        assert "workers" in result.stderr
+
+    def test_infinite_float_for_int_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TOML's `inf` literal parses fine but OverflowError (not
+        ValueError) on int() conversion -- a distinct exception type from
+        the "not-a-number" string case, so it needs its own coverage."""
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_text("timeout = inf\n")
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--offline"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert str(cfg) in result.stderr
+        assert "timeout" in result.stderr
+
+    def test_nan_float_for_int_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TOML's `nan` literal parses fine but raises ValueError on
+        int() conversion."""
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_text("retry = nan\n")
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--offline"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert str(cfg) in result.stderr
+        assert "retry" in result.stderr
+
+    def test_valid_config_still_loads_unchanged(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "linksanity.toml").write_text("check_anchors = true\nworkers = 3\n")
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--offline"])
+
+        assert result.exit_code == 1  # broken anchor link found -> non-zero exit
+        assert "Traceback" not in result.output
+        assert "broken=1" in result.stdout
+
+    def test_malformed_config_error_applies_to_fix(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_text("workers = = 5\n")
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["fix", "doc.md"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert str(cfg) in result.stderr
+
+    def test_malformed_config_error_applies_to_crawl(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pytest.importorskip("playwright", reason="playwright not installed — skipping")
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_text("workers = = 5\n")
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["crawl", "http://example.invalid"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert str(cfg) in result.stderr
+
+    def test_non_utf8_config_cp1252(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """tomllib decodes the raw bytes itself, so a cp1252/latin-1 save
+        (a common Windows-editor scenario) raises UnicodeDecodeError, not
+        TOMLDecodeError -- a distinct exception type requiring its own
+        handler."""
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_bytes('ignore_domains = ["café.example.com"]\n'.encode("cp1252"))
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--offline"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert str(cfg) in result.stderr
+        assert "not valid UTF-8" in result.stderr
+
+    def test_non_utf8_config_utf16(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An older Notepad 'Unicode' (UTF-16) save."""
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_bytes("workers = 5\n".encode("utf-16"))
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--offline"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert str(cfg) in result.stderr
+        assert "not valid UTF-8" in result.stderr
+
+    def test_unreadable_config_permission_denied(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_text("workers = 5\n")
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        cfg.chmod(0o000)
+        try:
+            result = runner.invoke(app, ["scan", "doc.md", "--offline"])
+        finally:
+            cfg.chmod(0o644)
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert str(cfg) in result.stderr
+        assert "cannot read" in result.stderr
+
+    def test_config_path_is_a_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = tmp_path / "linksanity.toml"
+        cfg.mkdir()
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--offline"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert str(cfg) in result.stderr
+        assert "cannot read" in result.stderr
+
+
+class TestConfigErrorIsBackwardCompatible:
+    """ConfigError must not break an existing `except ValueError` around a
+    library call to load_config (which previously raised a bare
+    TOMLDecodeError or ValueError there)."""
+
+    def test_config_error_is_a_value_error(self) -> None:
+        assert issubclass(ConfigError, ValueError)
+
+    def test_config_error_importable_from_package_root(self) -> None:
+        import linksanity
+
+        assert linksanity.ConfigError is ConfigError
+
+    def test_except_value_error_still_catches_malformed_config(
+        self, tmp_path: Path
+    ) -> None:
+        from linksanity.config import load_config
+
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_text("workers = = 5\n")
+
+        with pytest.raises(ValueError):
+            load_config(cfg)
 
 
 class TestCrawlConfigDiscoveryEndToEnd:

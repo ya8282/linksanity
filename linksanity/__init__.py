@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _distribution_version
 
-from linksanity.config import Config, load_config
+from linksanity.config import Config, ConfigError, load_config
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 from linksanity.scanner import run_scan
 
@@ -29,6 +29,7 @@ except PackageNotFoundError:  # imported from a source tree that was never insta
 
 __all__ = [
     "Config",
+    "ConfigError",
     "LinkResult",
     "LinkStatus",
     "LinkType",

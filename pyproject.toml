@@ -83,7 +83,7 @@ addopts = "--cov=linksanity --cov-report=term-missing"
 
 [tool.coverage.run]
 branch = true
-omit = ["tests/*", "linksanity/checkers/playwright.py"]
+omit = ["tests/*"]
 
 [tool.coverage.report]
 exclude_lines = [

@@ -12,6 +12,8 @@ import pytest
 # test-browser job runs them.
 pytest.importorskip("playwright")
 
+from playwright.async_api import Error as PlaywrightError
+
 from linksanity.checkers.playwright import check, crawl_page
 from linksanity.fixer import build_redirect_proposals, is_permanent_redirect
 from linksanity.queue import LinkQueue, LinkStatus, LinkType
@@ -353,3 +355,133 @@ class TestCrawlPageRedirectChainAndCodes:
         assert result.redirect_chain is None
         assert result.redirect_codes is None
         assert is_permanent_redirect(result) is False
+
+
+class TestCrawlPageStatusClassificationAndExtraction:
+    """crawl_page()'s own status classification (linksanity-yvh) — the
+    BROKEN/OK/ERROR branches and the extraction guard around them, distinct
+    from the redirect-chain/codes coverage above."""
+
+    @pytest.mark.asyncio
+    async def test_no_response_reports_error_and_skips_extraction(self) -> None:
+        # hrefs/ids are non-empty here so that, combined with the
+        # assert_not_called() below, this test actually fails if the
+        # extraction-skip guard is removed (an empty-list default would make
+        # `links == []` / `ids == set()` pass regardless of whether
+        # extraction ran).
+        ctx = _mock_crawl_context(status=None, hrefs=["https://example.com/a"], ids=["main"])
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            result, links, ids = await crawl_page(URL, "f", 1, LinkType.EXTERNAL)
+        assert result.status == LinkStatus.ERROR
+        assert result.error == "no response"
+        assert links == []
+        assert ids == set()
+        page = ctx.__aenter__.return_value.chromium.launch.return_value.new_page.return_value
+        page.eval_on_selector_all.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_playwright_error_reports_error_and_skips_extraction(self) -> None:
+        # Non-empty hrefs/ids + assert_not_called() below: see comment on
+        # test_no_response_reports_error_and_skips_extraction.
+        ctx = _mock_crawl_context(
+            status=200, resolved_url=URL, hrefs=["https://example.com/a"], ids=["main"]
+        )
+        pw = ctx.__aenter__.return_value
+        browser = pw.chromium.launch.return_value
+        page = browser.new_page.return_value
+        page.goto.side_effect = PlaywrightError("boom")
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            result, links, ids = await crawl_page(URL, "f", 1, LinkType.EXTERNAL)
+        assert result.status == LinkStatus.ERROR
+        assert result.error == "boom"
+        assert links == []
+        assert ids == set()
+        page.eval_on_selector_all.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_broken_status_skips_extraction(self) -> None:
+        # Non-empty hrefs/ids + assert_not_called() below: see comment on
+        # test_no_response_reports_error_and_skips_extraction.
+        ctx = _mock_crawl_context(
+            status=404, resolved_url=URL, hrefs=["https://example.com/a"], ids=["main"]
+        )
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            result, links, ids = await crawl_page(URL, "f", 1, LinkType.EXTERNAL)
+        assert result.status == LinkStatus.BROKEN
+        assert result.resolved_url is None
+        assert links == []
+        assert ids == set()
+        page = ctx.__aenter__.return_value.chromium.launch.return_value.new_page.return_value
+        page.eval_on_selector_all.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ok_status_extracts_links_and_ids(self) -> None:
+        ctx = _mock_crawl_context(
+            status=200,
+            resolved_url=URL,
+            hrefs=["https://example.com/a"],
+            ids=["main"],
+        )
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            result, links, ids = await crawl_page(URL, "f", 1, LinkType.EXTERNAL)
+        assert result.status == LinkStatus.OK
+        assert result.resolved_url is None
+        assert links == ["https://example.com/a"]
+        assert ids == {"main"}
+
+    @pytest.mark.asyncio
+    async def test_redirect_extracts_links_and_sets_resolved_url(self) -> None:
+        final_url = "https://example.com/canonical"
+        ctx = _mock_crawl_context(
+            status=200,
+            resolved_url=final_url,
+            redirect_hops=[(URL, 301)],
+            hrefs=["https://example.com/x"],
+            ids=["footer"],
+        )
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            result, links, ids = await crawl_page(URL, "f", 1, LinkType.EXTERNAL)
+        assert result.status == LinkStatus.REDIRECT
+        assert result.resolved_url == final_url
+        assert links == ["https://example.com/x"]
+        assert ids == {"footer"}
+
+
+class TestCrawlPageClientSideRedirectIsNotFlagged:
+    """linksanity-yvh: client-side redirects (meta-refresh, JS `location`
+    changes) produce no `redirected_from` on the HTTP response, so they are
+    deliberately reported as OK rather than REDIRECT — see the comment at
+    crawl_page's `was_redirected` line for the reasoning. This pins that
+    decision against a future "fix" that restores page.url comparison."""
+
+    @pytest.mark.asyncio
+    async def test_page_url_diverging_without_http_redirect_reports_ok(self) -> None:
+        # Simulates a client-side redirect: the rendered page ends up at a
+        # different page.url after JS/meta-refresh navigation, but the HTTP
+        # response Playwright saw was never redirected (redirected_from=None).
+        landed_url = "https://example.com/client-side-destination"
+        ctx = _mock_crawl_context(status=200, resolved_url=landed_url, redirect_hops=None)
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            result, links, ids = await crawl_page(URL, "f", 1, LinkType.EXTERNAL)
+        assert result.status == LinkStatus.OK
+        assert result.resolved_url is None
+        assert result.redirect_chain is None
+        assert result.redirect_codes is None

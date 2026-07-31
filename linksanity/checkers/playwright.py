@@ -163,6 +163,10 @@ async def check(
                 # for a real navigation-level redirect: non-None iff this
                 # request replaced an earlier one that received a redirect
                 # response.
+                #
+                # linksanity-yvh: this also means client-side redirects
+                # (meta-refresh, JS `location` changes) are deliberately not
+                # flagged — see the fuller note at crawl_page's matching line.
                 was_redirected = response.request.redirected_from is not None
                 if code >= 400:
                     status = LinkStatus.BROKEN
@@ -246,6 +250,15 @@ async def crawl_page(
                 resolved = page.url
                 # See the matching comment in check() above: use Playwright's
                 # actual redirect signal, not a string comparison of URLs.
+                #
+                # linksanity-yvh (deliberate, not an oversight): this also means
+                # client-side redirects (meta-refresh, JS `location` changes) are
+                # never flagged here. They carry no HTTP status code, so
+                # flagging them would reintroduce the exact REDIRECT-with-null-
+                # codes symptom beads vid/f8t removed, and the JS destination
+                # page.url lands on isn't a stable rewrite target — it can
+                # depend on cookies, timing, or client state. The link itself
+                # still resolves (200, content loads); we just don't rewrite it.
                 was_redirected = response.request.redirected_from is not None
                 if code >= 400:
                     status = LinkStatus.BROKEN

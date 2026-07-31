@@ -1,4 +1,4 @@
-"""GitHub Issue reporter — opens one issue per run summarising broken links.
+"""GitHub Issue reporter — opens one issue per run summarising failing links.
 
 Reads GITHUB_TOKEN from the environment. Never accepts the token as a CLI arg.
 Deduplicates by listing open issues sorted by most-recently-updated first
@@ -21,12 +21,11 @@ import httpx
 
 from linksanity._meta import HOMEPAGE_URL
 from linksanity.config import Config
-from linksanity.queue import LinkResult, LinkStatus
+from linksanity.queue import FAILING_STATUSES, LinkResult
 from linksanity.reporters._markdown_escape import escape_plain, wrap_code_span
 
 _API = "https://api.github.com"
 _TITLE_PREFIX = "[linksanity]"
-_BROKEN = {LinkStatus.BROKEN, LinkStatus.ERROR}
 _REPO_RE = re.compile(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$")
 # Runaway guard: at 100 issues/page this covers 1000 open issues before we
 # give up and warn. A repo with more open issues than that is pathological
@@ -36,8 +35,8 @@ _MAX_PAGES = 10
 
 
 def report(results: list[LinkResult], config: Config) -> None:
-    broken = [r for r in results if r.status in _BROKEN]
-    if not broken:
+    failing = [r for r in results if r.status in FAILING_STATUSES]
+    if not failing:
         return
 
     token = os.environ.get("GITHUB_TOKEN", "")
@@ -53,8 +52,8 @@ def report(results: list[LinkResult], config: Config) -> None:
     if not _REPO_RE.match(repo):
         raise ValueError(f"github_repo must be in OWNER/REPO format, got: {repo!r}")
 
-    title = f"{_TITLE_PREFIX} {len(broken)} broken link(s) found"
-    body = _build_body(broken)
+    title = f"{_TITLE_PREFIX} {len(failing)} failing link(s) found"
+    body = _build_body(failing)
 
     existing = _find_existing_issue(token, repo, title)
     if existing:
@@ -63,13 +62,13 @@ def report(results: list[LinkResult], config: Config) -> None:
         _create_issue(token, repo, title, body)
 
 
-def _build_body(broken: list[LinkResult]) -> str:
+def _build_body(failing: list[LinkResult]) -> str:
     lines = [
-        "linksanity detected the following broken links.\n",
+        "linksanity detected the following failing links.\n",
         "| File | Line | URL | Detail |",
         "|---|---|---|---|",
     ]
-    by_file = sorted(broken, key=attrgetter("source_file", "line"))
+    by_file = sorted(failing, key=attrgetter("source_file", "line"))
     for _sf, group_iter in groupby(by_file, key=attrgetter("source_file")):
         for r in group_iter:
             detail = f"`[{r.http_code}]`" if r.http_code else escape_plain(r.error or "")

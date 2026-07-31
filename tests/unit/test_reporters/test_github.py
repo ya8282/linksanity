@@ -110,6 +110,123 @@ class TestIssueCreation:
         assert "2" in body["title"]
 
 
+# ── FAILING_STATUSES parity: too-many-redirects counts as a failure ──────────
+# Regression: github_reporter.py used a private `_BROKEN = {BROKEN, ERROR}`
+# set instead of queue.FAILING_STATUSES, so a run whose only failures were
+# TOO_MANY_REDIRECTS exited 1 (CI-red) but opened no issue. See linksanity-50p.
+
+class TestFailingStatusesParity:
+    @respx.mock
+    def test_redirect_loop_only_opens_issue(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
+        respx.get(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(200, json=[])
+        )
+        created = respx.post(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(201, json={"number": 1})
+        )
+        r = _result(
+            status=LinkStatus.TOO_MANY_REDIRECTS,
+            http_code=None,
+            error="too many redirects (max 2)",
+        )
+        report([r], _config())
+        assert created.called
+
+    @respx.mock
+    def test_redirect_loop_wording_and_detail(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
+        respx.get(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(200, json=[])
+        )
+        created = respx.post(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(201, json={"number": 1})
+        )
+        r = _result(
+            status=LinkStatus.TOO_MANY_REDIRECTS,
+            http_code=None,
+            error="too many redirects (max 2)",
+        )
+        report([r], _config())
+        payload = json.loads(created.calls[0].request.content)
+        assert "broken link" not in payload["title"].lower()
+        assert "broken link" not in payload["body"].lower()
+        assert "failing link" in payload["title"].lower()
+        # escape_plain backslash-escapes parens in the bare Detail cell.
+        assert "too many redirects \\(max 2\\)" in payload["body"]
+
+    @respx.mock
+    def test_mixed_failures_counted_in_title(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
+        respx.get(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(200, json=[])
+        )
+        created = respx.post(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(201, json={"number": 1})
+        )
+        results = [
+            _result(status=LinkStatus.BROKEN, url="https://a.example.com"),
+            _result(
+                status=LinkStatus.ERROR,
+                url="https://b.example.com",
+                http_code=None,
+                error="connection refused",
+            ),
+            _result(
+                status=LinkStatus.TOO_MANY_REDIRECTS,
+                url="https://c.example.com",
+                http_code=None,
+                error="too many redirects (max 2)",
+            ),
+        ]
+        report(results, _config())
+        payload = json.loads(created.calls[0].request.content)
+        assert "3" in payload["title"]
+
+    @respx.mock
+    def test_only_ok_redirect_skipped_makes_no_api_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
+        results = [
+            _result(status=LinkStatus.OK, http_code=200),
+            _result(status=LinkStatus.REDIRECT, http_code=301),
+            _result(status=LinkStatus.SKIPPED, http_code=None),
+        ]
+        # If any HTTP call is made, respx will raise because no routes are registered
+        report(results, _config())
+
+    @respx.mock
+    def test_old_wording_existing_issue_still_found_and_updated(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
+        existing = [{"number": 7, "title": "[linksanity] 1 broken link(s) found"}]
+        respx.get(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(200, json=existing)
+        )
+        patched = respx.patch(f"{API}/repos/{REPO}/issues/7").mock(
+            return_value=httpx.Response(200, json={"number": 7})
+        )
+        created = respx.post(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(201, json={"number": 99})
+        )
+        r = _result(
+            status=LinkStatus.TOO_MANY_REDIRECTS,
+            http_code=None,
+            error="too many redirects (max 2)",
+        )
+        report([r], _config())
+        assert patched.called
+        assert not created.called
+
+
 # ── Issue deduplication ────────────────────────────────────────────────────────
 
 class TestDeduplication:
@@ -507,7 +624,7 @@ class TestPagination:
             [_result(), _result(url="https://other.example.com")], _config()
         )
         payload = json.loads(patched.calls[0].request.content)
-        assert payload["title"] == "[linksanity] 2 broken link(s) found"
+        assert payload["title"] == "[linksanity] 2 failing link(s) found"
         assert "2" in payload["title"]
         assert "body" in payload
 

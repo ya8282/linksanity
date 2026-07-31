@@ -40,6 +40,24 @@ DEFAULT_LINKSANITY_VERSION = "0.2.0"
 # that. Emitting it against an older pin fails the job with "No such option".
 CHECK_ANCHORS_MIN_VERSION = "0.2.0"
 
+# The `.status` values (from the stable results JSON schema) that count as a
+# failure in the generated workflow's own jq-based reporting. This must NOT
+# import linksanity.queue.FAILING_STATUSES: the rendered workflow installs a
+# pinned PyPI release (DEFAULT_LINKSANITY_VERSION), not this dev tree, so the
+# generated YAML has to key off the stable JSON string values rather than a
+# dev-tree Python constant. Single-sourced here so the jq filters in
+# render_workflow's report_step (count, annotations, summary table) cannot
+# drift from each other again.
+FAILING_STATUS_VALUES: tuple[str, ...] = ("broken", "error", "too_many_redirects")
+
+
+def _jq_status_select() -> str:
+    """Build the jq boolean expression selecting failing statuses.
+
+    e.g. '.status=="broken" or .status=="error" or .status=="too_many_redirects"'
+    """
+    return " or ".join(f'.status=="{status}"' for status in FAILING_STATUS_VALUES)
+
 _TRUTHY = {"y", "yes", "true", "1"}
 
 
@@ -91,23 +109,45 @@ def render_workflow(
     crawl_lines.append("            --output crawl-results.json")
     crawl_step = "\n".join(crawl_lines)
 
-    # Report broken links ourselves from the JSON results via jq rather than
+    # Report failing links ourselves from the JSON results via jq rather than
     # relying on linksanity's --annotations flag: the JSON schema is stable
     # across releases, so this keeps working no matter which version the pin
     # names, and it also produces a $GITHUB_STEP_SUMMARY table that
-    # --annotations does not. One inline ::error:: annotation per broken link
-    # plus that table. In crawl mode `source_file` is the page
-    # URL a link was found on, not a repo path, so (unlike the scan action)
-    # there is no meaningful file=/line= to attach -- fold the source page
-    # into the message text instead. This step must never fail the job itself;
-    # the crawl step's own exit code already decides pass/fail.
-    report_step = r"""      - name: Report broken links
+    # --annotations does not. One inline ::error:: annotation per failing link
+    # (see FAILING_STATUS_VALUES for what counts as failing) plus that table.
+    # In crawl mode `source_file` is the page URL a link was found on, not a
+    # repo path, so (unlike the scan action) there is no meaningful
+    # file=/line= to attach -- fold the source page into the message text
+    # instead. This step decides the job's pass/fail verdict itself, from
+    # failing_count below, rather than deferring to the crawl step's exit
+    # code: on the published DEFAULT_LINKSANITY_VERSION pin (0.2.0), crawl's
+    # own exit is broken+error only, so a too_many_redirects-only run exits 0
+    # there (that status only started failing crawl's own exit on main,
+    # unreleased as of this writing). Keying the verdict off
+    # FAILING_STATUS_VALUES here keeps it correct no matter which linksanity
+    # version is pinned.
+    status_select = _jq_status_select()
+    report_step = r"""      - name: Report failing links
         if: always()
         run: |
           RESULTS=crawl-results.json
+          # If the crawl step produced no results file at all, it already
+          # failed the job on its own nonzero exit -- deliberately not an
+          # additional failure here, just nothing to report on.
           if [ -f "$RESULTS" ] && [ -s "$RESULTS" ]; then
-            broken_count=$(jq '[.[] | select(.status=="broken" or .status=="error")] | length' "$RESULTS" 2>/dev/null || echo 0)
-            if [ "$broken_count" -gt 0 ]; then
+            # A jq parse failure is not "zero failing links": fail loudly
+            # rather than let a corrupt results file read as a silent green.
+            if ! failing_count=$(jq '[.[] | select(__STATUS_SELECT__)] | length' "$RESULTS" 2>&1); then
+              echo "::error::could not parse $RESULTS with jq: $failing_count"
+              exit 1
+            fi
+            case "$failing_count" in
+              (''|*[!0-9]*)
+                echo "::error::jq returned a non-numeric failing count: $failing_count"
+                exit 1
+                ;;
+            esac
+            if [ "$failing_count" -gt 0 ]; then
               # .error (and, more rarely, .url/.source_file) can be arbitrary
               # third-party text -- e.g. a Playwright exception string -- and
               # may contain embedded CR/LF. Left unsanitized, jq -r would emit
@@ -116,7 +156,7 @@ def render_workflow(
               # ::error:: annotation. Collapse CR/LF to a space before use.
               jq -r '
                 .[]
-                | select(.status=="broken" or .status=="error")
+                | select(__STATUS_SELECT__)
                 | . as $r
                 | ($r.source_file // "" | gsub("[\r\n]+"; " ")) as $source
                 | ($r.url // "" | gsub("[\r\n]+"; " ")) as $url
@@ -128,13 +168,13 @@ def render_workflow(
 
               if [ -n "$GITHUB_STEP_SUMMARY" ]; then
                 {
-                  echo "### $broken_count broken link(s) found"
+                  echo "### $failing_count failing link(s) found"
                   echo ""
                   echo "| Source page | URL | Status | Detail |"
                   echo "| --- | --- | --- | --- |"
                   jq -r '
                     .[]
-                    | select(.status=="broken" or .status=="error")
+                    | select(__STATUS_SELECT__)
                     | . as $r
                     | ($r.source_file // "" | gsub("[\r\n]+"; " ")) as $source
                     | ($r.url // "" | gsub("[\r\n]+"; " ")) as $url
@@ -143,10 +183,12 @@ def render_workflow(
                   ' "$RESULTS"
                 } >> "$GITHUB_STEP_SUMMARY" || true
               fi
-            fi
-          fi"""
 
-    return f"""# Crawls {url} and fails the job if any link is broken.
+              exit 1
+            fi
+          fi""".replace("__STATUS_SELECT__", status_select)
+
+    return f"""# Crawls {url} and fails the job if any link is failing.
 name: Link check
 
 on:

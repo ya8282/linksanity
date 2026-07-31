@@ -183,7 +183,7 @@ class TestScanOutputFormats:
         f = tmp_path / "a.md"
         f.write_text("[broken](missing.md)\n")
         result = runner.invoke(app, ["scan", str(f), "--format", "json"])
-        data = json.loads(result.output)
+        data = json.loads(result.stdout)
         assert data[0]["status"] == "broken"
 
 
@@ -236,6 +236,13 @@ class TestScanFormatConfigPrecedence:
 
         assert result.exit_code == 1, result.stderr
         assert json.loads(result.stdout)[0]["status"] == "broken"
+        # Symmetry (linksanity-1pq): the config-announcement suppression
+        # keys off the *effective* format (config.format, known only after
+        # load_config), not the raw --format flag. format = "json" from
+        # linksanity.toml must suppress the announcement exactly like
+        # --format json on the command line would -- same bare-stdout-json
+        # noise decision regardless of where the format value came from.
+        assert result.stderr == ""
 
     def test_explicit_flag_overrides_config_format(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

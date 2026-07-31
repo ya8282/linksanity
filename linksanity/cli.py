@@ -91,8 +91,16 @@ def _announce_config(path: Path | None, format: str, output: str | None) -> None
     which guards genuine stdout corruption because the annotations reporter
     writes to stdout.
 
-    Errors (e.g. a missing --config path) are unaffected — those always
-    print.
+    Called after _load_config_or_exit with the *effective* config.format
+    and config.output (linksanity-1pq) rather than the raw CLI flags, so
+    the suppression decision is symmetric: `--format json` on the command
+    line and `format = "json"` in linksanity.toml produce identical noise
+    behaviour. Deferring this past config loading means it no longer prints
+    ahead of a config-parse error, but ConfigError messages already name the
+    offending path (see linksanity.config._location), so nothing is lost
+    there. The "--config file not found" error is unaffected -- that still
+    fires immediately from _resolve_config_path, before any config is
+    loaded.
     """
     if format in ("json", "csv") and not output:
         return
@@ -102,28 +110,25 @@ def _announce_config(path: Path | None, format: str, output: str | None) -> None
         typer.echo(f"[linksanity] using config: {path}", err=True)
 
 
-def _resolve_config_path(config_file: str | None, format: str, output: str | None) -> Path | None:
-    """Resolve the linksanity.toml to load and announce the outcome on stderr.
+def _resolve_config_path(config_file: str | None) -> Path | None:
+    """Resolve the linksanity.toml to load, without announcing anything.
 
     An explicit --config path wins outright; if it does not exist that is
     an error, not a silent fallback to defaults. Otherwise, search upward
     from the cwd for the nearest linksanity.toml (see _discover_config).
-    Either way, announce the outcome via _announce_config so a config being
-    silently ignored is no longer possible. Stderr keeps this out of
-    --format json/csv stdout output; _announce_config additionally
-    suppresses it outright for the bare structured-stdout case.
+
+    The announcement itself is made by _announce_config, called separately
+    once the effective config (and therefore its effective format/output)
+    is known (linksanity-1pq).
     """
     if config_file:
         explicit_path = Path(config_file)
         if not explicit_path.exists():
             typer.echo(f"[linksanity] --config file not found: {explicit_path}", err=True)
             raise typer.Exit(2)
-        _announce_config(explicit_path, format, output)
         return explicit_path
 
-    discovered_path = _discover_config()
-    _announce_config(discovered_path, format, output)
-    return discovered_path
+    return _discover_config()
 
 
 def _load_config_or_exit(config_path: Path | None, **overrides: object) -> Config:
@@ -268,17 +273,12 @@ def scan(
     if skip_set:
         overrides["skip_urls"] = skip_set
 
-    # _resolve_config_path/_announce_config only decide whether to print the
-    # config-announcement stderr line, and they run before load_config, so
-    # they cannot know a config-file-supplied format yet. Collapse an unset
-    # --format to "console" for this pre-load call only (linksanity-u65): a
-    # json/csv format coming from linksanity.toml will still print the
-    # announcement, which is fine per linksanity-1pq -- it's stderr-only and
-    # doesn't corrupt a `--format json | jq` pipeline.
-    config_path = _resolve_config_path(
-        config_file, format if format is not None else "console", output
-    )
+    config_path = _resolve_config_path(config_file)
     config = _load_config_or_exit(config_path, **overrides)
+    # Announce after loading so the suppression decision keys off the
+    # *effective* format/output (from --format/--output or linksanity.toml,
+    # whichever won), not just the raw CLI flags (linksanity-1pq).
+    _announce_config(config_path, config.format, config.output)
 
     if config.format not in ("console", "json", "csv"):
         typer.echo(
@@ -512,6 +512,8 @@ def fix(
         overrides["cache_ttl"] = cache_ttl
     if format is not None:
         overrides["format"] = format
+    if output:
+        overrides["output"] = output
 
     ignore_set = _read_domains(ignore_domains)
     skip_set = _read_domains(skip_urls)
@@ -520,12 +522,9 @@ def fix(
     if skip_set:
         overrides["skip_urls"] = skip_set
 
-    # See the matching comment on scan's call for why None collapses to
-    # "console" here specifically (linksanity-u65 / linksanity-1pq).
-    config_path = _resolve_config_path(
-        config_file, format if format is not None else "console", output
-    )
+    config_path = _resolve_config_path(config_file)
     config = _load_config_or_exit(config_path, **overrides)
+    _announce_config(config_path, config.format, config.output)
 
     if config.format not in ("console", "json"):
         typer.echo(
@@ -685,12 +684,9 @@ def crawl(
     if block_analytics:
         overrides["block_analytics"] = True
 
-    # See the matching comment on scan's call for why None collapses to
-    # "console" here specifically (linksanity-u65 / linksanity-1pq).
-    config_path = _resolve_config_path(
-        config_file, format if format is not None else "console", output
-    )
+    config_path = _resolve_config_path(config_file)
     config = _load_config_or_exit(config_path, **overrides)
+    _announce_config(config_path, config.format, config.output)
 
     if config.format not in ("console", "json", "csv"):
         typer.echo(

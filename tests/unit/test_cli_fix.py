@@ -368,7 +368,7 @@ class TestJsonOutput:
     def test_json_schema_keys(self, doc: Path) -> None:
         with _patch_proposals([_proposal(str(doc))]):
             result = runner.invoke(app, ["fix", str(doc), "--format", "json"])
-        [row] = json.loads(result.output)
+        [row] = json.loads(result.stdout)
         assert row == {
             "source_file": str(doc),
             "line": 1,
@@ -383,7 +383,7 @@ class TestJsonOutput:
         proposals = [_proposal(str(doc)), _proposal(str(doc), auto_applicable=False)]
         with _patch_proposals(proposals):
             result = runner.invoke(app, ["fix", str(doc), "--format", "json"])
-        rows = json.loads(result.output)
+        rows = json.loads(result.stdout)
         assert [r["auto_applicable"] for r in rows] == [True, False]
 
     def test_output_file_written(self, doc: Path, tmp_path: Path) -> None:

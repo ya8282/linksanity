@@ -268,6 +268,28 @@ class TestAnnouncementSuppression:
         captured = capsys.readouterr()
         assert "no linksanity.toml found" in captured.err
 
+    def test_stdout_never_carries_the_announcement_for_json_output(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """End-to-end guard for linksanity-1pq: the announcement is
+        stderr-only, confirmed via CliRunner's separated stdout/stderr
+        streams (not the combined result.output) for --format json with an
+        explicit --output file -- the one json scenario where the line
+        isn't suppressed outright, so there is something on stderr to
+        check for."""
+        (tmp_path / "linksanity.toml").write_text("check_anchors = true\n")
+        _write_doc(tmp_path)
+        out = tmp_path / "out.json"
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(
+            app,
+            ["scan", "doc.md", "--offline", "--format", "json", "--output", str(out)],
+        )
+
+        assert "[linksanity]" not in result.stdout
+        assert "[linksanity] using config" in result.stderr
+
 
 class TestFixConfigDiscoveryEndToEnd:
     """`fix` shares the same discovery helper as `scan`; a light check that it
@@ -298,6 +320,40 @@ class TestFixConfigDiscoveryEndToEnd:
 
         assert result.exit_code == 2
         assert "not found" in result.stderr
+
+    def test_output_flag_is_not_suppressed_for_json_with_output_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression guard for linksanity-1pq: unlike `scan` and `crawl`,
+        `fix` never fed its --output value into the config overrides, so
+        config.output was always None and _announce_config's bare-stdout
+        suppression check fired even though stdout was not carrying JSON
+        (an --output file was given). `--format json --output <file>`
+        must still announce the config on stderr."""
+        (tmp_path / "linksanity.toml").write_text("check_anchors = true\n")
+        _write_doc(tmp_path)
+        out = tmp_path / "out.json"
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(
+            app,
+            ["fix", "doc.md", "--format", "json", "--output", str(out)],
+        )
+
+        assert "[linksanity] using config" in result.stderr
+
+    def test_bare_json_stdout_still_suppresses_announcement(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without --output, `--format json` is the bare-pipe case and the
+        announcement stays suppressed, same as scan."""
+        (tmp_path / "linksanity.toml").write_text("check_anchors = true\n")
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["fix", "doc.md", "--format", "json"])
+
+        assert "using config" not in result.stderr
 
 
 class TestMalformedConfigIsAnInvocationError:

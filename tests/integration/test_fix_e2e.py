@@ -94,7 +94,7 @@ class TestDryRun:
     @respx.mock
     def test_healthy_link_gets_no_proposal(self, corpus: Path, mock_web: None) -> None:
         result = runner.invoke(app, ["fix", str(corpus), "--format", "json"])
-        urls = {row["old_url"] for row in json.loads(result.output)}
+        urls = {row["old_url"] for row in json.loads(result.stdout)}
         assert OK not in urls
 
     @respx.mock
@@ -184,7 +184,7 @@ class TestJsonSchema:
     @respx.mock
     def test_documented_schema(self, corpus: Path, mock_web: None) -> None:
         result = runner.invoke(app, ["fix", str(corpus), "--format", "json"])
-        rows = json.loads(result.output)
+        rows = json.loads(result.stdout)
         assert rows
         for row in rows:
             assert set(row) == {
@@ -200,7 +200,7 @@ class TestJsonSchema:
         self, corpus: Path, mock_web: None
     ) -> None:
         result = runner.invoke(app, ["fix", str(corpus), "--format", "json"])
-        rows = json.loads(result.output)
+        rows = json.loads(result.stdout)
         auto = {r["kind"] for r in rows if r["auto_applicable"]}
         manual = {r["kind"] for r in rows if not r["auto_applicable"]}
         assert auto == {"redirect", "moved_file"}

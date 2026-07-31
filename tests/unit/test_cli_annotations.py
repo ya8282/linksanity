@@ -143,7 +143,7 @@ class TestScanAnnotationsWiring:
         # And the JSON must still be valid — no annotation lines leaked in
         import json
 
-        data = json.loads(result.output)
+        data = json.loads(result.stdout)
         assert data[0]["status"] == "broken"
 
     def test_auto_detect_enabled_for_json_with_output_file_in_ci(

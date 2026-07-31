@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from typing import Any
 from urllib.parse import urlparse
 
 from linksanity.queue import LinkResult, LinkStatus, LinkType
@@ -43,6 +44,51 @@ def _require_playwright() -> None:
             "Playwright is not installed. "
             "Run: pip install linksanity[browser] && playwright install chromium"
         ) from None
+
+
+async def _redirect_chain(
+    response: Any, final_url: str
+) -> tuple[list[str] | None, list[int] | None]:
+    """Reconstruct the redirect chain and per-hop status codes for `response`.
+
+    `request.redirected_from` points at the request that redirected *to* this
+    one, so walking it backwards yields the hops newest-first; reversed, that's
+    request order. Shaped to match http.py's `_make_result`: `chain` is each
+    hop's URL followed by the final resolved URL, `codes` is each hop's status
+    code (no final 200).
+
+    Returns (None, None) when there's no redirect, and also when any hop's
+    status code can't be honestly determined (its `response()` came back None
+    or raised) — fabricating a code, or dropping just that hop, would let
+    `is_permanent_redirect` auto-apply a rewrite based on a guess. Falling
+    back to (None, None) instead reproduces today's safe "temporary redirect"
+    behaviour for that hop and keeps chain/codes tied together the same way
+    the httpx checker always produces them (never one populated without the
+    other).
+    """
+    from playwright.async_api import Error as PlaywrightError
+
+    hops = []
+    req = response.request
+    while req.redirected_from is not None:
+        req = req.redirected_from
+        hops.append(req)
+    if not hops:
+        return None, None
+    hops.reverse()
+
+    codes: list[int] = []
+    for hop in hops:
+        try:
+            hop_response = await hop.response()
+        except PlaywrightError:
+            return None, None
+        if hop_response is None:
+            return None, None
+        codes.append(hop_response.status)
+
+    chain = [hop.url for hop in hops] + [final_url]
+    return chain, codes
 
 
 async def extract_links(url: str, *, semaphore: asyncio.Semaphore | None = None) -> list[str]:
@@ -124,11 +170,14 @@ async def check(
                     status = LinkStatus.REDIRECT
                 else:
                     status = LinkStatus.OK
+                chain, codes = await _redirect_chain(response, resolved)
                 return LinkResult(
                     source_file=source_file, line=line, url=url,
                     link_type=link_type, status=status,
                     http_code=code,
                     resolved_url=resolved if was_redirected else None,
+                    redirect_chain=chain,
+                    redirect_codes=codes,
                     cell=cell,
                 )
             except PlaywrightError as exc:
@@ -204,11 +253,14 @@ async def crawl_page(
                     status = LinkStatus.REDIRECT
                 else:
                     status = LinkStatus.OK
+                chain, codes = await _redirect_chain(response, resolved)
                 result = LinkResult(
                     source_file=source_file, line=line, url=url,
                     link_type=link_type, status=status,
                     http_code=code,
                     resolved_url=resolved if was_redirected else None,
+                    redirect_chain=chain,
+                    redirect_codes=codes,
                 )
                 # Extract links and element ids from any reachable page, including redirects
                 if status in (LinkStatus.OK, LinkStatus.REDIRECT):

@@ -442,7 +442,7 @@ Each item in the output array has:
 | `http_code` | Final HTTP status, or `null` for links that were never fetched |
 | `resolved_url` | Final URL after redirects; `null` when there was no redirect |
 | `cell` | Notebook cell index for `.ipynb` sources; `null` otherwise. **`line` is relative to the cell, not the file** |
-| `redirect_chain` | Every URL in the chain, original first; `null` unless an HTTP redirect response was actually received. A URL that differs only by normalization (host case, scheme case, dot-segments) with no real redirect reports `status: "ok"`, not `"redirect"` |
+| `redirect_chain` | Every URL in the chain, original first; `null` unless an HTTP redirect response was actually received, and also `null` in the rare case where a hop's status code couldn't be determined (chain and codes are always `null` together, never one without the other, so a code is never guessed). A URL that differs only by normalization (host case, scheme case, dot-segments) with no real redirect reports `status: "ok"`, not `"redirect"` |
 | `redirect_codes` | The status code of each hop, parallel to `redirect_chain`'s hops. All 301/308 means permanently moved and safe to rewrite. `null` whenever `redirect_chain` is `null`, for the same reasons |
 
 ### Repair loop

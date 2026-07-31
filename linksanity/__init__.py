@@ -64,13 +64,13 @@ def scan_paths(
         config: An existing :class:`~linksanity.config.Config` to use
             instead of the default. If omitted, a default ``Config()`` is
             used with ``check_anchors`` applied on top of it. Note this
-            differs from the ``linksanity scan`` CLI command: the CLI calls
-            :func:`load_config`, which auto-discovers and merges a
-            ``./linksanity.toml`` in the current working directory, but
-            ``scan_paths(config=None)`` does not — it never touches the
-            filesystem for config. Call :func:`load_config` yourself and
-            pass the result as ``config=`` if you want CLI-equivalent
-            config-file behavior.
+            differs from the ``linksanity scan`` CLI command: the CLI
+            searches the cwd and its parent directories (stopping at a
+            ``.git`` boundary) for a ``linksanity.toml`` and merges it via
+            :func:`load_config`, but ``scan_paths(config=None)`` does not —
+            it never touches the filesystem for config. Call
+            :func:`load_config` yourself and pass the result as ``config=``
+            if you want CLI-equivalent config-file behavior.
 
     Returns:
         A list of ``LinkResult``, one per unique link found.

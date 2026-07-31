@@ -40,7 +40,7 @@ linksanity is modular — install only what you need for your use case.
 | **Browser crawl** | `pip install "linksanity[browser]"` then `playwright install chromium` | `linksanity crawl https://docs.example.com` | [Crawl a live site](#crawl-a-live-site) |
 | **Pre-commit hook** | already included; add to `.pre-commit-config.yaml` | `repo: https://github.com/ya8282/linksanity`, `rev: v0.2.0`, `hooks: [{id: linksanity}]` | [Pre-commit hook](#pre-commit-hook) |
 | **GitHub Action** | none — no local install needed | `- uses: ya8282/linksanity-action@v1` with `paths: docs/` | [CI integration](#ci-integration) — see the [ya8282/linksanity-action](https://github.com/ya8282/linksanity-action) repo |
-| **Library API** | `pip install linksanity` | `from linksanity import scan_paths` | [Use as a library](#use-as-a-library) (note: no `./linksanity.toml` auto-discovery, unlike the CLI) |
+| **Library API** | `pip install linksanity` | `from linksanity import scan_paths` | [Use as a library](#use-as-a-library) (note: no `linksanity.toml` auto-discovery, unlike the CLI) |
 
 ## Supported formats
 
@@ -398,7 +398,7 @@ you need a file-wide position.
 
 Pass a `Config` (from `linksanity.load_config` or constructed directly) via the `config=` keyword for anything beyond `check_anchors`, e.g. `--workers`/`--timeout` equivalents.
 
-Note: unlike the `linksanity scan` CLI command, `scan_paths(config=None)` does **not** auto-discover a `./linksanity.toml` in the current working directory — it uses bare `Config()` defaults. Call `load_config()` yourself and pass it as `config=` if you want the CLI's config-file discovery behavior.
+Note: unlike the `linksanity scan` CLI command, `scan_paths(config=None)` does **not** auto-discover a `linksanity.toml` by walking up from the current working directory — it uses bare `Config()` defaults. Call `load_config()` yourself and pass it as `config=` if you want the CLI's config-file discovery behavior.
 
 ## Use with AI agents
 
@@ -667,7 +667,9 @@ group, plus:
 
 ## Configuration file
 
-Discovery is a single check for `linksanity.toml` in the current working directory — linksanity does not walk upward looking for a project root. Run linksanity from the directory containing the file, or point at it explicitly with `--config path/to/linksanity.toml`. If no config is found at that path (default location or `--config`), linksanity falls back to defaults silently, with no warning:
+`scan`, `fix`, and `crawl` discover `linksanity.toml` by walking upward from the current working directory toward the filesystem root, using the nearest one found. The walk stops at (and still checks) the first directory containing a `.git` entry, treating it as the project boundary — a stray `linksanity.toml` in an unrelated ancestor directory (e.g. your home directory) can't leak into the project you're scanning. Pass `--config path/to/linksanity.toml` to use a specific file instead; an explicit `--config` path that doesn't exist is an error, not a silent fallback to defaults.
+
+Either way, linksanity prints one line to stderr saying which config file it loaded, or that it found none and is using defaults — never silently. That line is suppressed for `--format json`/`--format csv` runs with no `--output` file, since that's the agent/script pipe case where it would be noise on every invocation. It goes to stderr, so it would not corrupt a `--format json | jq` pipeline even when shown:
 
 ```toml
 workers = 10

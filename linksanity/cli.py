@@ -56,6 +56,76 @@ def _read_domains(path: str | None) -> set[str]:
         raise typer.Exit(2) from exc
 
 
+def _discover_config() -> Path | None:
+    """Walk from the cwd toward the filesystem root looking for linksanity.toml.
+
+    Stops at (and includes) the first directory containing a `.git` entry,
+    treating it as the project boundary -- a stray linksanity.toml sitting
+    in an ancestor directory (e.g. a home directory) must not leak into an
+    unrelated project. If no `.git` is found on the way up, the walk
+    continues to the filesystem root.
+    """
+    directory = Path.cwd()
+    while True:
+        candidate = directory / "linksanity.toml"
+        if candidate.exists():
+            return candidate
+        if (directory / ".git").exists():
+            return None
+        parent = directory.parent
+        if parent == directory:
+            return None
+        directory = parent
+
+
+def _announce_config(path: Path | None, format: str, output: str | None) -> None:
+    """Print one stderr line saying which linksanity.toml (if any) was used.
+
+    Suppressed when the run emits bare structured output on stdout — format
+    is json/csv and no --output file was given. That's the agent/script pipe
+    case, where this line would be noise on every invocation.
+
+    Note this is a noise choice, not a correctness one: the line goes to
+    stderr, so it does not corrupt a `--format json | jq` pipeline either
+    way. It is a weaker rule than _annotations_enabled's "Assumption 6",
+    which guards genuine stdout corruption because the annotations reporter
+    writes to stdout.
+
+    Errors (e.g. a missing --config path) are unaffected — those always
+    print.
+    """
+    if format in ("json", "csv") and not output:
+        return
+    if path is None:
+        typer.echo("[linksanity] no linksanity.toml found; using defaults", err=True)
+    else:
+        typer.echo(f"[linksanity] using config: {path}", err=True)
+
+
+def _resolve_config_path(config_file: str | None, format: str, output: str | None) -> Path | None:
+    """Resolve the linksanity.toml to load and announce the outcome on stderr.
+
+    An explicit --config path wins outright; if it does not exist that is
+    an error, not a silent fallback to defaults. Otherwise, search upward
+    from the cwd for the nearest linksanity.toml (see _discover_config).
+    Either way, announce the outcome via _announce_config so a config being
+    silently ignored is no longer possible. Stderr keeps this out of
+    --format json/csv stdout output; _announce_config additionally
+    suppresses it outright for the bare structured-stdout case.
+    """
+    if config_file:
+        explicit_path = Path(config_file)
+        if not explicit_path.exists():
+            typer.echo(f"[linksanity] --config file not found: {explicit_path}", err=True)
+            raise typer.Exit(2)
+        _announce_config(explicit_path, format, output)
+        return explicit_path
+
+    discovered_path = _discover_config()
+    _announce_config(discovered_path, format, output)
+    return discovered_path
+
+
 @app.command()
 def scan(
     paths: list[str] = typer.Argument(..., help="Files, directories, or glob patterns"),  # noqa: B008
@@ -187,12 +257,7 @@ def scan(
     if skip_set:
         overrides["skip_urls"] = skip_set
 
-    config_path = Path(config_file) if config_file else None
-    if config_path is None:
-        default = Path.cwd() / "linksanity.toml"
-        if default.exists():
-            config_path = default
-
+    config_path = _resolve_config_path(config_file, format, output)
     config = load_config(config_path, **overrides)
 
     if config.js_domains:
@@ -429,11 +494,7 @@ def fix(
     if skip_set:
         overrides["skip_urls"] = skip_set
 
-    config_path = Path(config_file) if config_file else None
-    if config_path is None:
-        default = Path.cwd() / "linksanity.toml"
-        if default.exists():
-            config_path = default
+    config_path = _resolve_config_path(config_file, format, output)
     config = load_config(config_path, **overrides)
 
     if config.js_domains:
@@ -584,12 +645,7 @@ def crawl(
     if block_analytics:
         overrides["block_analytics"] = True
 
-    config_path = Path(config_file) if config_file else None
-    if config_path is None:
-        default = Path.cwd() / "linksanity.toml"
-        if default.exists():
-            config_path = default
-
+    config_path = _resolve_config_path(config_file, format, output)
     config = load_config(config_path, **overrides)
 
     if github_issue and not repo and not config.github_repo:

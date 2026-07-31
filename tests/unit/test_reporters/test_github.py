@@ -9,6 +9,7 @@ import pytest
 import respx
 from markdown_it import MarkdownIt
 
+from linksanity._meta import HOMEPAGE_URL
 from linksanity.config import Config
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 from linksanity.reporters.github_reporter import (
@@ -293,3 +294,12 @@ class TestFindExistingIssue:
         )
         result = _find_existing_issue(TOKEN, REPO, "[linksanity] broken")
         assert result == 5
+
+
+# ── Footer link ────────────────────────────────────────────────────────────
+
+class TestFooterLink:
+    def test_body_footer_links_to_homepage(self) -> None:
+        r = _result()
+        body = _build_body([r])
+        assert f"[linksanity]({HOMEPAGE_URL})" in body

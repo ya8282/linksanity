@@ -8,7 +8,15 @@ import httpx
 import pytest
 import respx
 
-from linksanity.checkers.http import _domain_match, _is_private_host, _resolve, check
+import linksanity
+from linksanity._meta import HOMEPAGE_URL
+from linksanity.checkers.http import (
+    _HEADERS,
+    _domain_match,
+    _is_private_host,
+    _resolve,
+    check,
+)
 from linksanity.queue import LinkStatus, LinkType
 
 SOURCE = "docs/index.md"
@@ -434,3 +442,13 @@ class TestDomainMatch:
         self, domain: str, ignore_set: set[str], expected: bool
     ) -> None:
         assert _domain_match(domain, ignore_set) == expected
+
+
+# ── User-Agent ─────────────────────────────────────────────────────────────
+
+class TestUserAgent:
+    def test_user_agent_contains_homepage(self) -> None:
+        assert f"(+{HOMEPAGE_URL})" in _HEADERS["User-Agent"]
+
+    def test_user_agent_version_matches_package_version(self) -> None:
+        assert f"linksanity/{linksanity.__version__} " in _HEADERS["User-Agent"]

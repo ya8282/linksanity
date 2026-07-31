@@ -9,12 +9,13 @@ from urllib.parse import urlparse
 
 import httpx
 
+from linksanity._meta import HOMEPAGE_URL, VERSION
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 
 _RETRY_ON = {429, 503}
 _FALLBACK_ON = {405}
 _TIMEOUT = httpx.Timeout(10.0)
-_HEADERS = {"User-Agent": "linksanity/0.1 link-checker (+https://github.com/linksanity)"}
+_HEADERS = {"User-Agent": f"linksanity/{VERSION} link-checker (+{HOMEPAGE_URL})"}
 
 # Hostnames that are always private regardless of DNS resolution
 _PRIVATE_HOSTNAMES = frozenset({"localhost", "metadata.google.internal"})

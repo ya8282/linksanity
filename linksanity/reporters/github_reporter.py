@@ -13,6 +13,7 @@ from operator import attrgetter
 
 import httpx
 
+from linksanity._meta import HOMEPAGE_URL
 from linksanity.config import Config
 from linksanity.queue import LinkResult, LinkStatus
 from linksanity.reporters._markdown_escape import escape_plain, wrap_code_span
@@ -66,7 +67,7 @@ def _build_body(broken: list[LinkResult]) -> str:
                 f"| {wrap_code_span(r.source_file)} | {line_col} | "
                 f"{wrap_code_span(r.url)} | {detail} |"
             )
-    lines.append("\n_Opened by [linksanity](https://github.com/linksanity/linksanity)._")
+    lines.append(f"\n_Opened by [linksanity]({HOMEPAGE_URL})._")
     return "\n".join(lines)
 
 

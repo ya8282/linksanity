@@ -374,9 +374,9 @@ Rewriting source files is the one thing linksanity does that you can't undo with
 
 `.ipynb` is deliberately excluded: notebook results carry line numbers *within a cell*, so a file-level rewrite would corrupt an unrelated line.
 
-### A note on caches
+### A note on redirects without status codes
 
-Redirect permanence comes from status codes recorded during the check. Entries cached by linksanity 0.1.x predate that field, so redirects resolved from an old cache are treated as suggestions rather than auto-fixes. Clear the cache, or wait for the TTL, after upgrading.
+Redirect permanence comes from status codes recorded during the check, but not every reported `redirect` has any: if httpx normalizes the URL (host case, scheme case, dot-segments, default port, percent-encoding) without an actual HTTP hop, the result carries a `redirect` status with no `redirect_chain` or `redirect_codes` to show for it. `fix` can't distinguish that from an unconfirmed temporary redirect, so it renders it as a suggestion rather than an auto-fix, even though the URL never really changed. This is a known gap, not intentional behavior.
 
 ## Use as a library
 
@@ -446,8 +446,8 @@ Each item in the output array has:
 | `http_code` | Final HTTP status, or `null` for links that were never fetched |
 | `resolved_url` | Final URL after redirects; `null` when there was no redirect |
 | `cell` | Notebook cell index for `.ipynb` sources; `null` otherwise. **`line` is relative to the cell, not the file** |
-| `redirect_chain` | Every URL in the chain, original first; `null` when there was no redirect |
-| `redirect_codes` | The status code of each hop, parallel to `redirect_chain`'s hops. All 301/308 means permanently moved and safe to rewrite. `null` whenever `redirect_chain` is `null` (no redirect occurred) |
+| `redirect_chain` | Every URL in the chain, original first; `null` unless an HTTP redirect response was actually received — a `status: "redirect"` produced by URL normalization alone (see [A note on redirects without status codes](#a-note-on-redirects-without-status-codes)) leaves this `null` too |
+| `redirect_codes` | The status code of each hop, parallel to `redirect_chain`'s hops. All 301/308 means permanently moved and safe to rewrite. `null` whenever `redirect_chain` is `null`, for the same reasons |
 
 ### Repair loop
 

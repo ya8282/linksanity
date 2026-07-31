@@ -1,13 +1,19 @@
 """GitHub Issue reporter — opens one issue per run summarising broken links.
 
 Reads GITHUB_TOKEN from the environment. Never accepts the token as a CLI arg.
-Deduplicates by checking for an existing open issue with the same title prefix.
+Deduplicates by listing open issues sorted by most-recently-updated first
+(the reporter PATCHes the linksanity issue on every run, so it is bumped to
+the front of that ordering) and checking for an existing one with the same
+title prefix. Pagination follows the `Link: rel="next"` header, up to a
+bounded page cap, as a correctness backstop for the first run against a repo
+where the issue exists but has gone untouched for a long time.
 """
 
 from __future__ import annotations
 
 import os
 import re
+import sys
 from itertools import groupby
 from operator import attrgetter
 
@@ -22,6 +28,11 @@ _API = "https://api.github.com"
 _TITLE_PREFIX = "[linksanity]"
 _BROKEN = {LinkStatus.BROKEN, LinkStatus.ERROR}
 _REPO_RE = re.compile(r"^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$")
+# Runaway guard: at 100 issues/page this covers 1000 open issues before we
+# give up and warn. A repo with more open issues than that is pathological
+# enough to warrant a human looking at it rather than the reporter looping
+# forever.
+_MAX_PAGES = 10
 
 
 def report(results: list[LinkResult], config: Config) -> None:
@@ -47,7 +58,7 @@ def report(results: list[LinkResult], config: Config) -> None:
 
     existing = _find_existing_issue(token, repo, title)
     if existing:
-        _update_issue(token, repo, existing, body)
+        _update_issue(token, repo, existing, title, body)
     else:
         _create_issue(token, repo, title, body)
 
@@ -80,17 +91,44 @@ def _headers(token: str) -> dict[str, str]:
 
 
 def _find_existing_issue(token: str, repo: str, title: str) -> int | None:
-    """Return the issue number of an existing open linksanity issue, or None."""
-    resp = httpx.get(
-        f"{_API}/repos/{repo}/issues",
-        params={"state": "open", "labels": "", "per_page": 100},
-        headers=_headers(token),
-        timeout=15,
+    """Return the issue number of an existing open linksanity issue, or None.
+
+    Paginates through `GET /repos/{repo}/issues` following the `Link:
+    rel="next"` response header, stopping as soon as a match is found. The
+    `issues` endpoint also returns pull requests, which are skipped via the
+    `pull_request` key present only on PR entries.
+    """
+    url: str = f"{_API}/repos/{repo}/issues"
+    params: dict[str, str | int] | None = {
+        "state": "open",
+        "labels": "",
+        "per_page": 100,
+        # Sort by most-recently-updated: the reporter PATCHes the linksanity
+        # issue on every run, so this keeps it pinned to page 1 in practice
+        # and is what makes _MAX_PAGES an adequate cap rather than a source
+        # of duplicate issues on busy repos. Direction is set explicitly
+        # rather than relying on the endpoint's default.
+        "sort": "updated",
+        "direction": "desc",
+    }
+    for _page in range(_MAX_PAGES):
+        resp = httpx.get(url, params=params, headers=_headers(token), timeout=15)
+        resp.raise_for_status()
+        for issue in resp.json():
+            if "pull_request" in issue:
+                continue
+            if isinstance(issue.get("title"), str) and issue["title"].startswith(_TITLE_PREFIX):
+                return int(issue["number"])
+        next_link = resp.links.get("next")
+        if not next_link or not next_link.get("url"):
+            return None
+        url = next_link["url"]
+        params = None  # the `next` URL already carries all query params
+    print(
+        f"linksanity: gave up searching for an existing issue after {_MAX_PAGES} pages "
+        "of open issues; a duplicate issue may be created.",
+        file=sys.stderr,
     )
-    resp.raise_for_status()
-    for issue in resp.json():
-        if isinstance(issue.get("title"), str) and issue["title"].startswith(_TITLE_PREFIX):
-            return int(issue["number"])
     return None
 
 
@@ -104,10 +142,10 @@ def _create_issue(token: str, repo: str, title: str, body: str) -> None:
     resp.raise_for_status()
 
 
-def _update_issue(token: str, repo: str, number: int, body: str) -> None:
+def _update_issue(token: str, repo: str, number: int, title: str, body: str) -> None:
     resp = httpx.patch(
         f"{_API}/repos/{repo}/issues/{number}",
-        json={"body": body},
+        json={"title": title, "body": body},
         headers=_headers(token),
         timeout=15,
     )

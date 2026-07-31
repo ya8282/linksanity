@@ -524,7 +524,12 @@ def fix(
     proposals = asyncio.run(_collect_proposals(paths, config, redirects, wayback))
 
     if not proposals:
-        typer.echo("[linksanity] nothing to fix")
+        typer.echo("[linksanity] nothing to fix", err=True)
+        if format == "json":
+            # Keep --format json structurally identical whether or not there are
+            # proposals: an empty array, not silence, so a parser downstream
+            # doesn't have to special-case "no output at all".
+            _emit(_render_fix_output(proposals, format), output)
         raise typer.Exit(0)
 
     if not write:

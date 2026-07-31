@@ -179,6 +179,16 @@ class TestExitCodes:
         assert result.exit_code == 0
         assert "nothing to fix" in result.output
 
+    def test_no_proposals_message_is_on_stderr_not_stdout(self, doc: Path) -> None:
+        # Console format is unchanged apart from the stream: no JSON, no empty
+        # structure printed to a human — just the message, now on stderr.
+        with _patch_proposals([]):
+            result = runner.invoke(app, ["fix", str(doc)])
+        assert result.exit_code == 0
+        assert "nothing to fix" in result.stderr
+        assert "nothing to fix" not in result.stdout
+        assert result.stdout == ""
+
     def test_proposals_in_dry_run_exit_one(self, doc: Path) -> None:
         with _patch_proposals([_proposal(str(doc))]):
             result = runner.invoke(app, ["fix", str(doc)])
@@ -388,3 +398,24 @@ class TestJsonOutput:
             result = runner.invoke(app, ["fix", str(doc), "--output", str(bad)])
         assert result.exit_code == 2
         assert "cannot write output" in result.output
+
+    def test_no_proposals_still_yields_parseable_json_on_stdout(self, doc: Path) -> None:
+        # Regression: "nothing to fix" used to go to stdout unconditionally,
+        # corrupting `--format json` output for a pipe-parsing consumer.
+        with _patch_proposals([]):
+            result = runner.invoke(app, ["fix", str(doc), "--format", "json"])
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == []
+        assert "nothing to fix" in result.stderr
+        assert "nothing to fix" not in result.stdout
+
+    def test_no_proposals_json_output_file_is_written(self, doc: Path, tmp_path: Path) -> None:
+        # A consumer redirecting to --output must get a real (empty) JSON
+        # document, not an empty/absent file, when there is nothing to fix.
+        out = tmp_path / "fixes.json"
+        with _patch_proposals([]):
+            result = runner.invoke(
+                app, ["fix", str(doc), "--format", "json", "--output", str(out)]
+            )
+        assert result.exit_code == 0
+        assert json.loads(out.read_text(encoding="utf-8")) == []

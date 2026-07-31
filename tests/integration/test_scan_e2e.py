@@ -187,6 +187,41 @@ class TestScanOutputFormats:
         assert data[0]["status"] == "broken"
 
 
+# ── --format validation (regression: bad --format corrupted --output files) ────
+
+class TestScanFormatValidation:
+    def test_bad_format_rejected(self, tmp_path: Path) -> None:
+        f = tmp_path / "a.md"
+        f.write_text("[broken](missing.md)\n")
+        result = runner.invoke(app, ["scan", str(f), "--format", "bogus"])
+        assert result.exit_code == 2
+        assert "--format" in result.output
+
+    def test_bad_format_writes_no_output_file(self, tmp_path: Path) -> None:
+        # Regression: an invalid --format used to fall through to the console
+        # reporter and write Rich console text into --output, which then
+        # failed json.load() downstream. The bad value must be rejected
+        # before the output path is ever opened.
+        f = tmp_path / "a.md"
+        f.write_text("[broken](missing.md)\n")
+        out = tmp_path / "out.json"
+        result = runner.invoke(
+            app, ["scan", str(f), "--format", "bogus", "--output", str(out)]
+        )
+        assert result.exit_code == 2
+        assert not out.exists()
+
+    def test_valid_format_still_works(self, tmp_path: Path) -> None:
+        f = tmp_path / "a.md"
+        f.write_text("[broken](missing.md)\n")
+        out = tmp_path / "out.json"
+        result = runner.invoke(
+            app, ["scan", str(f), "--format", "json", "--output", str(out)]
+        )
+        assert result.exit_code == 1, result.output
+        assert json.loads(out.read_text())[0]["status"] == "broken"
+
+
 # ── HTTP edge cases (mocked via respx) ────────────────────────────────────────
 
 class TestScanHTTPEdgeCases:

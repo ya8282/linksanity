@@ -5,6 +5,7 @@ Requires playwright to be installed; skipped otherwise.
 
 from __future__ import annotations
 
+import json
 import tempfile
 import threading
 import time
@@ -103,3 +104,41 @@ class TestCrawlBasic:
         )
         assert Path(out_path).exists()
         assert len(Path(out_path).read_text()) > 0
+
+
+# ── --format validation (regression: crawl never checked --format) ─────────────
+
+class TestCrawlFormatValidation:
+    def test_bad_format_rejected_without_crawling(self) -> None:
+        # The bad value must be rejected before any crawl/playwright work
+        # starts, so this needs no server and no real network access.
+        result = runner.invoke(app, ["crawl", "http://example.invalid", "--format", "bogus"])
+        assert result.exit_code == 2
+        assert "--format" in result.output
+
+    def test_bad_format_writes_no_output_file(self, tmp_path: Path) -> None:
+        out = tmp_path / "out.json"
+        result = runner.invoke(
+            app,
+            ["crawl", "http://example.invalid", "--format", "bogus", "--output", str(out)],
+        )
+        assert result.exit_code == 2
+        assert not out.exists()
+
+    def test_valid_format_still_works(self, site_url: str) -> None:
+        # The HTTP server used by site_url logs access lines to stderr, which
+        # CliRunner can interleave into captured output, so write to a file
+        # instead of asserting on stdout being pure JSON.
+        ignore = _domains_file(["external.example.com"])
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as out_f:
+            out_path = out_f.name
+        result = runner.invoke(
+            app,
+            ["crawl", f"{site_url}/index.html",
+             "--max-pages", "1",
+             "--ignore-domains", ignore,
+             "--format", "json",
+             "--output", out_path],
+        )
+        assert result.exit_code == 0, result.output
+        assert isinstance(json.loads(Path(out_path).read_text()), list)

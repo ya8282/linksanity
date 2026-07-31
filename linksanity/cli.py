@@ -153,6 +153,11 @@ def scan(
         overrides["annotations"] = annotations
     if offline:
         overrides["offline"] = True
+    if format not in ("console", "json", "csv"):
+        typer.echo(
+            f"[linksanity] --format must be one of: console, json, csv (got {format!r})", err=True
+        )
+        raise typer.Exit(2)
     if link_style:
         if link_style not in ("mkdocs", "docusaurus", "sphinx"):
             typer.echo(
@@ -528,6 +533,11 @@ def crawl(
     ),
 ) -> None:
     """Crawl a live site and check all links."""
+    if format not in ("console", "json", "csv"):
+        typer.echo(
+            f"[linksanity] --format must be one of: console, json, csv (got {format!r})", err=True
+        )
+        raise typer.Exit(2)
     try:
         import playwright  # noqa: F401
     except ImportError:

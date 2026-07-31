@@ -53,7 +53,7 @@ linksanity checks links in 8 file formats:
 - **MDX** — `.mdx` files (CommonMark + JSX)
 - **Jupyter Notebooks** — `.ipynb` files (extracts markdown cells)
 - **MyST-flavored Markdown** — `.md` files with opt-in `--myst` flag or `myst = true` in config (enables MyST role extraction: `{doc}`, `{ref}`)
-- **DocBook** — `.xml`, `.dbk` files (extracts link and xref elements)
+- **DocBook** — `.xml`, `.dbk` files (extracts `<xref linkend>` for DocBook 4 and 5, `<link xlink:href>` for DocBook 5, and `<ulink url>` for DocBook 4)
 
 ## Install
 
@@ -267,6 +267,28 @@ To run full (online) checks instead, pass `--no-offline` via `args:`. pre-commit
         args: [--no-offline]
 ```
 
+**File types the hook actually sees.** The hook's `types_or` is
+`[markdown, rst, html]`. pre-commit resolves those tags via `identify`, which
+also tags `.htm` as `html`, so `.md`, `.rst`, `.html`, and `.htm` all reach the
+hook. Four of the formats linksanity's own scanner supports do not:
+AsciiDoc (`.adoc`/`.asciidoc`), MDX (`.mdx`), Jupyter Notebooks (`.ipynb`),
+and DocBook (`.xml`/`.dbk`) never trigger the hook, even though
+`linksanity scan` checks them. If your docs use those formats, either extend
+`types_or` yourself in the consuming repo's `.pre-commit-config.yaml`
+(`identify` tags `.xml` as `xml`, `.ipynb` as `jupyter`, `.mdx` as `mdx`, and
+`.adoc`/`.asciidoc` as `asciidoc`), or run `linksanity scan` separately in CI
+for full coverage. `.dbk` is a special case: `identify` gives it no
+distinguishing tag, only the generic `file`/`text` ones. pre-commit ANDs
+`files` with `types_or`, so a `files:` regex alone still gets filtered out by
+the manifest's `types_or` and silently matches nothing. Relax `types_or` and
+narrow with `files:` together:
+
+```yaml
+- id: linksanity
+  types_or: [file]
+  files: \.dbk$
+```
+
 ### GitHub Issue reporting
 
 Use `--github-issue` when you want broken links surfaced as a trackable GitHub Issue rather than just a failed CI run. It creates or updates a single `[linksanity]` issue listing every broken URL, so the team has a persistent record to triage — not just a red check mark that disappears on the next push.
@@ -324,7 +346,10 @@ linksanity fix ./docs/ --write
 |---|---|---|---|
 | `redirect` | Every hop in the chain is a 301 or 308 | High — the server itself declares the new canonical URL | **Yes** |
 | `moved_file` | A broken relative link whose basename matches exactly one file in the corpus | Medium — inferred from the file tree | **Yes**, unique match only |
-| `wayback` | A dead external link (404/410) with an Internet Archive snapshot | Low — a judgment call | **Never** — suggested only |
+| `wayback` (only built with `--wayback`) | A dead external link (404/410), or one that failed outright — DNS failure, connect timeout, TLS error — with an Internet Archive snapshot | Low — a judgment call | **Never** — suggested only |
+
+`redirect` and `moved_file` proposals are always built from a scan. `wayback`
+proposals are opt-in: pass `--wayback` or none are generated.
 
 Anything ambiguous is reported, never guessed:
 
@@ -366,6 +391,10 @@ broken = [r for r in results if r.status == LinkStatus.BROKEN]
 for r in broken:
     print(f"{r.source_file}:{r.line} -> {r.url}")
 ```
+
+For `.ipynb` sources, `r.line` is relative to the cell, not the file — use
+`r.cell` (the cell index, `None` for non-notebook sources) alongside it if
+you need a file-wide position.
 
 Pass a `Config` (from `linksanity.load_config` or constructed directly) via the `config=` keyword for anything beyond `check_anchors`, e.g. `--workers`/`--timeout` equivalents.
 
@@ -567,10 +596,16 @@ subcommand that doesn't define it exits `2` with `No such option`.
 | `--playwright-workers` | — | — | ✅ |
 | `--block-analytics` | — | — | ✅ |
 
-A `linksanity.toml` is shared by all three subcommands, so a key set there is
-accepted even by a subcommand with no matching flag. Keys that a subcommand
-doesn't act on are ignored silently — `check_images` is ignored by `crawl`,
-for example, since `crawl` has no `--check-images` flag.
+A `linksanity.toml` is shared by all three subcommands. Most `Config` fields
+are parsed from TOML regardless of which subcommand runs, but a subcommand
+only *acts on* the ones with a matching flag — `check_images` is parsed even
+under `crawl`, for example, but `crawl` has no `--check-images` flag and never
+reads the field, so setting it silently has no effect on a crawl.
+
+Four fields are different: `output`, `report`, `github_issue`, and
+`github_repo` are never read from `linksanity.toml` at all — `load_config`
+doesn't parse them from the file, so they can only be set via CLI flag,
+regardless of subcommand.
 
 ### `linksanity scan <paths...>`
 
@@ -580,6 +615,9 @@ for example, since `crawl` has no `--check-images` flag.
 | `--timeout N` | 10 | Per-request timeout (seconds) |
 | `--retry N` | 2 | Retries on 429/503 |
 | `--check-anchors` | off | Validate `#fragment` links |
+| `--check-images` | off | Also validate `<img src>` / `![]()` image targets, not just links |
+| `--myst` | off | Also extract MyST `{doc}`/`{ref}` role targets from `.md` files |
+| `--link-style` | — | Relative-link resolution preset for built docs sites: `mkdocs`, `docusaurus`, `sphinx` |
 | `--ignore-domains FILE` | — | One domain per line to skip |
 | `--js-domains FILE` | — | Domains to check via Playwright |
 | `--skip-urls FILE` | — | URLs/patterns to skip (one per line, `*` wildcards ok) |
@@ -589,6 +627,12 @@ for example, since `crawl` has no `--check-images` flag.
 | `--github-issue` | off | Open/update a GitHub Issue |
 | `--repo OWNER/REPO` | — | Required with `--github-issue` |
 | `--config FILE` | auto | Path to `linksanity.toml` |
+| `--max-redirects N` | 10 | Max redirect hops before flagging as too-many-redirects |
+| `--cache FILE` | — | Path to a local cache file; re-runs skip unchanged links within `--cache-ttl` |
+| `--cache-ttl N` | 86400 | Seconds a cached link result stays valid |
+| `--incremental` | off | Only scan files changed since the last run (git diff-aware) |
+| `--since REF` | last recorded run | Git ref to diff against for `--incremental` |
+| `--baseline FILE` | — | Previous JSON report to diff against; only new breakage is reported |
 | `--annotations` / `--no-annotations` | auto-detect | Emit GitHub Actions `::error`/`::warning` annotations (auto-enabled in Actions unless writing JSON/CSV to bare stdout) |
 | `--offline` | off | Skip external HTTP checks, reporting them as `skipped`; doesn't touch the cache |
 
@@ -641,6 +685,29 @@ skip_urls = [
   "https://staging.example.com/*",
 ]
 ```
+
+The keys above aren't the whole surface — `load_config` parses most other
+`Config` fields with a matching TOML name too (the four exceptions are noted
+below the table). The rest, with their defaults:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `playwright_workers` | `2` | Max concurrent browser sessions (`crawl`) |
+| `check_images` | `false` | Also validate image targets, not just links |
+| `link_style` | unset | Relative-link resolution preset: `mkdocs`, `docusaurus`, `sphinx` |
+| `format` | `"console"` | Output format: `console`, `json`, or `csv` |
+| `max_redirects` | `10` | Max redirect hops before flagging as too-many-redirects |
+| `cache_file` | unset | Path to a local cache file |
+| `cache_ttl` | `86400` | Seconds a cached link result stays valid |
+| `incremental` | `false` | Only scan files changed since the last run |
+| `since` | unset | Git ref to diff against for `incremental` |
+| `baseline` | unset | Previous JSON report to diff against |
+| `annotations` | unset (auto-detect) | Emit GitHub Actions annotations; `true`/`false` overrides auto-detect |
+| `offline` | `false` | Skip external HTTP checks |
+
+Four `Config` fields — `output`, `report`, `github_issue`, `github_repo` — are
+never read from `linksanity.toml` at all; see the note under the flag
+compatibility matrix above.
 
 ## Exit codes
 

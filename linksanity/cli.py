@@ -167,7 +167,9 @@ def scan(
     skip_urls: str | None = typer.Option(
         None, help="File listing URLs or patterns to skip, e.g. auth-gated pages (one per line, * wildcards ok)"
     ),
-    format: str = typer.Option("console", help="Output format: console, json, csv"),
+    format: str | None = typer.Option(
+        None, help="Output format: console, json, csv (default: console)"
+    ),
     output: str | None = typer.Option(None, help="Write results to this file"),
     report_path: str | None = typer.Option(
         None, "--report", help="Write Markdown summary report to this file"
@@ -236,11 +238,6 @@ def scan(
         overrides["annotations"] = annotations
     if offline:
         overrides["offline"] = True
-    if format not in ("console", "json", "csv"):
-        typer.echo(
-            f"[linksanity] --format must be one of: console, json, csv (got {format!r})", err=True
-        )
-        raise typer.Exit(2)
     if link_style:
         if link_style not in ("mkdocs", "docusaurus", "sphinx"):
             typer.echo(
@@ -257,7 +254,8 @@ def scan(
         overrides["github_issue"] = True
     if repo:
         overrides["github_repo"] = repo
-    overrides["format"] = format
+    if format is not None:
+        overrides["format"] = format
 
     # Load ignore/js domain files and skip URL file
     ignore_set = _read_domains(ignore_domains)
@@ -270,8 +268,24 @@ def scan(
     if skip_set:
         overrides["skip_urls"] = skip_set
 
-    config_path = _resolve_config_path(config_file, format, output)
+    # _resolve_config_path/_announce_config only decide whether to print the
+    # config-announcement stderr line, and they run before load_config, so
+    # they cannot know a config-file-supplied format yet. Collapse an unset
+    # --format to "console" for this pre-load call only (linksanity-u65): a
+    # json/csv format coming from linksanity.toml will still print the
+    # announcement, which is fine per linksanity-1pq -- it's stderr-only and
+    # doesn't corrupt a `--format json | jq` pipeline.
+    config_path = _resolve_config_path(
+        config_file, format if format is not None else "console", output
+    )
     config = _load_config_or_exit(config_path, **overrides)
+
+    if config.format not in ("console", "json", "csv"):
+        typer.echo(
+            f"[linksanity] --format must be one of: console, json, csv (got {config.format!r})",
+            err=True,
+        )
+        raise typer.Exit(2)
 
     if config.js_domains:
         try:
@@ -450,7 +464,9 @@ def fix(
     wayback: bool = typer.Option(
         False, help="Also suggest archive.org snapshots for dead external links"
     ),
-    format: str = typer.Option("console", help="Output format: console, json"),
+    format: str | None = typer.Option(
+        None, help="Output format: console, json (default: console)"
+    ),
     output: str | None = typer.Option(None, help="Write proposals to this file"),
 ) -> None:
     """Propose fixes for broken and redirected links, and optionally apply them."""
@@ -467,11 +483,6 @@ def fix(
         typer.echo(
             f"[linksanity] --redirects must be one of: permanent, all (got {redirects!r})",
             err=True,
-        )
-        raise typer.Exit(2)
-    if format not in ("console", "json"):
-        typer.echo(
-            f"[linksanity] --format must be one of: console, json (got {format!r})", err=True
         )
         raise typer.Exit(2)
     if link_style is not None and link_style not in ("mkdocs", "docusaurus", "sphinx"):
@@ -499,6 +510,8 @@ def fix(
         overrides["cache_file"] = cache
     if cache_ttl is not None:
         overrides["cache_ttl"] = cache_ttl
+    if format is not None:
+        overrides["format"] = format
 
     ignore_set = _read_domains(ignore_domains)
     skip_set = _read_domains(skip_urls)
@@ -507,8 +520,19 @@ def fix(
     if skip_set:
         overrides["skip_urls"] = skip_set
 
-    config_path = _resolve_config_path(config_file, format, output)
+    # See the matching comment on scan's call for why None collapses to
+    # "console" here specifically (linksanity-u65 / linksanity-1pq).
+    config_path = _resolve_config_path(
+        config_file, format if format is not None else "console", output
+    )
     config = _load_config_or_exit(config_path, **overrides)
+
+    if config.format not in ("console", "json"):
+        typer.echo(
+            f"[linksanity] --format must be one of: console, json (got {config.format!r})",
+            err=True,
+        )
+        raise typer.Exit(2)
 
     if config.js_domains:
         try:
@@ -525,22 +549,22 @@ def fix(
 
     if not proposals:
         typer.echo("[linksanity] nothing to fix", err=True)
-        if format == "json":
+        if config.format == "json":
             # Keep --format json structurally identical whether or not there are
             # proposals: an empty array, not silence, so a parser downstream
             # doesn't have to special-case "no output at all".
-            _emit(_render_fix_output(proposals, format), output)
+            _emit(_render_fix_output(proposals, config.format), output)
         raise typer.Exit(0)
 
     if not write:
-        _emit(_render_fix_output(proposals, format), output)
+        _emit(_render_fix_output(proposals, config.format), output)
         raise typer.Exit(1)
 
     _check_clean_tree(proposals, force)
     applied, modified = apply_proposals(proposals)
 
-    if format == "json":
-        _emit(_render_fix_output(proposals, format), output)
+    if config.format == "json":
+        _emit(_render_fix_output(proposals, config.format), output)
     else:
         lines = (
             [f"Applied {applied} fix(es) across {len(modified)} file(s):"]
@@ -593,7 +617,9 @@ def crawl(
     block_analytics: bool = typer.Option(
         False, help="Block and ignore requests to common analytics/tracking domains"
     ),
-    format: str = typer.Option("console", help="Output format: console, json, csv"),
+    format: str | None = typer.Option(
+        None, help="Output format: console, json, csv (default: console)"
+    ),
     output: str | None = typer.Option(None, help="Write results to this file"),
     report_path: str | None = typer.Option(
         None, "--report", help="Write Markdown summary report to this file"
@@ -612,11 +638,6 @@ def crawl(
     ),
 ) -> None:
     """Crawl a live site and check all links."""
-    if format not in ("console", "json", "csv"):
-        typer.echo(
-            f"[linksanity] --format must be one of: console, json, csv (got {format!r})", err=True
-        )
-        raise typer.Exit(2)
     try:
         import playwright  # noqa: F401
     except ImportError:
@@ -652,7 +673,8 @@ def crawl(
         overrides["max_redirects"] = max_redirects
     if annotations is not None:
         overrides["annotations"] = annotations
-    overrides["format"] = format
+    if format is not None:
+        overrides["format"] = format
 
     ignore_set = _read_domains(ignore_domains)
     skip_set = _read_domains(skip_urls)
@@ -663,8 +685,19 @@ def crawl(
     if block_analytics:
         overrides["block_analytics"] = True
 
-    config_path = _resolve_config_path(config_file, format, output)
+    # See the matching comment on scan's call for why None collapses to
+    # "console" here specifically (linksanity-u65 / linksanity-1pq).
+    config_path = _resolve_config_path(
+        config_file, format if format is not None else "console", output
+    )
     config = _load_config_or_exit(config_path, **overrides)
+
+    if config.format not in ("console", "json", "csv"):
+        typer.echo(
+            f"[linksanity] --format must be one of: console, json, csv (got {config.format!r})",
+            err=True,
+        )
+        raise typer.Exit(2)
 
     if github_issue and not repo and not config.github_repo:
         typer.echo("[linksanity] --repo is required with --github-issue", err=True)

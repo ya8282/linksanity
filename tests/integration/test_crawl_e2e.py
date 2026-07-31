@@ -142,3 +142,62 @@ class TestCrawlFormatValidation:
         )
         assert result.exit_code == 0, result.output
         assert isinstance(json.loads(Path(out_path).read_text()), list)
+
+
+# ── format precedence: linksanity.toml `format` key vs --format (linksanity-u65) ─
+
+class TestCrawlFormatConfigPrecedence:
+    def test_config_format_json_used_without_flag(
+        self, site_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "linksanity.toml").write_text('format = "json"\n')
+        monkeypatch.chdir(tmp_path)
+        ignore = _domains_file(["external.example.com"])
+        out = tmp_path / "out.json"
+
+        result = runner.invoke(
+            app,
+            ["crawl", f"{site_url}/index.html",
+             "--max-pages", "1",
+             "--ignore-domains", ignore,
+             "--output", str(out)],
+        )
+
+        assert result.exit_code == 0, result.stderr
+        assert isinstance(json.loads(out.read_text()), list)
+
+    def test_explicit_flag_overrides_config_format(
+        self, site_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "linksanity.toml").write_text('format = "json"\n')
+        monkeypatch.chdir(tmp_path)
+        ignore = _domains_file(["external.example.com"])
+        out = tmp_path / "out.txt"
+
+        result = runner.invoke(
+            app,
+            ["crawl", f"{site_url}/index.html",
+             "--max-pages", "1",
+             "--ignore-domains", ignore,
+             "--format", "console",
+             "--output", str(out)],
+        )
+
+        assert result.exit_code == 0, result.stderr
+        text = out.read_text()
+        assert "broken=" in text
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(text)
+
+    def test_bad_config_format_rejected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No --format flag and no network/crawl work needed: format = "bogus"
+        # from linksanity.toml must be caught right after load_config.
+        (tmp_path / "linksanity.toml").write_text('format = "bogus"\n')
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["crawl", "http://example.invalid"])
+
+        assert result.exit_code == 2
+        assert "--format" in result.stderr

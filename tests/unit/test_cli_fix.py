@@ -419,3 +419,58 @@ class TestJsonOutput:
             )
         assert result.exit_code == 0
         assert json.loads(out.read_text(encoding="utf-8")) == []
+
+
+# ── format precedence: linksanity.toml `format` key vs --format (linksanity-u65) ─
+
+class TestFormatConfigPrecedence:
+    def test_config_format_json_used_without_flag(
+        self, doc: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "linksanity.toml").write_text('format = "json"\n')
+        monkeypatch.chdir(tmp_path)
+
+        with _patch_proposals([_proposal(str(doc))]):
+            result = runner.invoke(app, ["fix", str(doc)])
+
+        assert result.exit_code == 1, result.stderr
+        rows = json.loads(result.stdout)
+        assert rows[0]["kind"] == "redirect"
+
+    def test_explicit_flag_overrides_config_format(
+        self, doc: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "linksanity.toml").write_text('format = "json"\n')
+        monkeypatch.chdir(tmp_path)
+
+        with _patch_proposals([_proposal(str(doc))]):
+            result = runner.invoke(app, ["fix", str(doc), "--format", "console"])
+
+        assert result.exit_code == 1, result.stderr
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(result.stdout)
+        assert f"-See [docs]({OLD}) here" in result.stdout
+
+    def test_no_config_no_flag_defaults_to_console(
+        self, doc: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        with _patch_proposals([_proposal(str(doc))]):
+            result = runner.invoke(app, ["fix", str(doc)])
+
+        assert result.exit_code == 1, result.stderr
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(result.stdout)
+
+    def test_bad_config_format_rejected(
+        self, doc: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "linksanity.toml").write_text('format = "bogus"\n')
+        monkeypatch.chdir(tmp_path)
+
+        with _patch_proposals([_proposal(str(doc))]):
+            result = runner.invoke(app, ["fix", str(doc)])
+
+        assert result.exit_code == 2
+        assert "--format" in result.stderr

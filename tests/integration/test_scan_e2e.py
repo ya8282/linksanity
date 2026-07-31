@@ -222,6 +222,59 @@ class TestScanFormatValidation:
         assert json.loads(out.read_text())[0]["status"] == "broken"
 
 
+# ── format precedence: linksanity.toml `format` key vs --format (linksanity-u65) ─
+
+class TestScanFormatConfigPrecedence:
+    def test_config_format_json_used_without_flag(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "linksanity.toml").write_text('format = "json"\n')
+        (tmp_path / "a.md").write_text("[broken](missing.md)\n")
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "a.md"])
+
+        assert result.exit_code == 1, result.stderr
+        assert json.loads(result.stdout)[0]["status"] == "broken"
+
+    def test_explicit_flag_overrides_config_format(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "linksanity.toml").write_text('format = "json"\n')
+        (tmp_path / "a.md").write_text("[broken](missing.md)\n")
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "a.md", "--format", "console"])
+
+        assert result.exit_code == 1, result.stderr
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(result.stdout)
+
+    def test_no_config_no_flag_defaults_to_console(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "a.md").write_text("[broken](missing.md)\n")
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "a.md"])
+
+        assert result.exit_code == 1, result.stderr
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(result.stdout)
+
+    def test_bad_config_format_rejected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "linksanity.toml").write_text('format = "bogus"\n')
+        (tmp_path / "a.md").write_text("[broken](missing.md)\n")
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "a.md"])
+
+        assert result.exit_code == 2
+        assert "--format" in result.stderr
+
+
 # ── HTTP edge cases (mocked via respx) ────────────────────────────────────────
 
 class TestScanHTTPEdgeCases:

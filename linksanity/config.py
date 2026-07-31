@@ -152,6 +152,53 @@ def _str(data: dict[str, object], key: str, default: str, path: Path | None = No
     return v
 
 
+# Minimum accepted value for each numeric key that has a meaningful floor.
+# workers/playwright_workers/timeout/max_pages must be >= 1 (0 or negative
+# either deadlocks a Semaphore, times out every request instantly, or
+# crawls nothing). retry/max_redirects/cache_ttl may legitimately be 0
+# ("no retries" / "don't follow redirects" / "always expired"); only
+# negative values are invalid for those.
+_MINIMUMS: dict[str, int] = {
+    "workers": 1,
+    "playwright_workers": 1,
+    "timeout": 1,
+    "max_pages": 1,
+    "retry": 0,
+    "max_redirects": 0,
+    "cache_ttl": 0,
+}
+
+
+def _validate_ranges(
+    cfg: Config,
+    data: dict[str, object],
+    overrides: dict[str, object],
+    path: Path | None,
+) -> None:
+    """Reject an out-of-range effective value at load time (linksanity-6lm).
+
+    Runs after CLI overrides have been applied to cfg, so it validates the
+    *effective* value regardless of whether it came from linksanity.toml or
+    a CLI flag (e.g. ``--workers -5`` bypasses the ``_int`` helper entirely
+    via a direct ``setattr``, so it must be checked here too).
+
+    The ``in <path>`` location suffix is only added when the value actually
+    came from the config file. A CLI-supplied override takes precedence
+    over the same key in the file (see the setattr loop in load_config), so
+    checking `key in overrides` first correctly identifies that case even
+    when the file also set the key.
+    """
+    for key, minimum in _MINIMUMS.items():
+        value = getattr(cfg, key)
+        if value >= minimum:
+            continue
+        from_cli = key in overrides and overrides[key] is not None
+        location = "" if from_cli else _location(path if key in data else None)
+        raise ConfigError(
+            f"invalid value for '{key}'{location}: must be >= {minimum}, got {value}"
+        )
+
+
 def _bool_or_none(data: dict[str, object], key: str, path: Path | None = None) -> bool | None:
     if key not in data:
         return None
@@ -227,5 +274,7 @@ def load_config(
     for key, value in overrides.items():
         if value is not None and hasattr(cfg, key):
             setattr(cfg, key, value)
+
+    _validate_ranges(cfg, data, overrides, search_path)
 
     return cfg

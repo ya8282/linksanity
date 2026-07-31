@@ -619,3 +619,84 @@ class TestCrawlConfigDiscoveryEndToEnd:
 
         assert result.exit_code == 2
         assert "not found" in result.stderr
+
+
+class TestNumericRangeValidationEndToEnd:
+    """An out-of-range numeric value -- from linksanity.toml or a CLI flag
+    such as --workers -5 -- must exit 2 with a clean message before any scan
+    work begins, rather than tracebacking mid-run (linksanity-6lm)."""
+
+    def test_cli_negative_workers_exits_2_no_traceback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--workers", "-5"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.stdout
+        assert "Traceback" not in result.stderr
+        assert "workers" in result.stderr
+        assert "must be >= 1, got -5" in result.stderr
+
+    def test_cli_zero_workers_exits_2(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--workers", "0"])
+
+        assert result.exit_code == 2
+        assert "must be >= 1, got 0" in result.stderr
+
+    def test_config_file_out_of_range_names_the_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = tmp_path / "linksanity.toml"
+        cfg.write_text("workers = -5\n")
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md"])
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.stdout
+        assert "Traceback" not in result.stderr
+        assert str(cfg) in result.stderr
+
+    def test_cli_flag_out_of_range_does_not_name_a_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No linksanity.toml is present here at all, but the point holds
+        even when one is: a CLI-supplied override must never be blamed on
+        the config file, since the file did not actually supply the value."""
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--workers", "-5"])
+
+        assert result.exit_code == 2
+        assert "linksanity.toml" not in result.stderr
+
+    def test_fails_before_any_scan_work_begins(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Points at an unreachable target; if config validation happened
+        anywhere but before run_scan, this would hang or traceback deep in
+        the crawl instead of failing fast at load time."""
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        def _fail_if_called(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("run_scan must not be called for an invalid config")
+
+        monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--workers", "-5"])
+
+        assert result.exit_code == 2
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Traceback" not in result.stdout
+        assert "Traceback" not in result.stderr

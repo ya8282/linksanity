@@ -1,5 +1,6 @@
 """Tests for config loading and CLI override logic."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -290,6 +291,83 @@ class TestAcceptedCoercionsStillWork:
         p.write_text("check_anchors = 1\n")
         cfg = load_config(toml_path=p)
         assert cfg.check_anchors is True
+
+
+class TestNumericRangeValidation:
+    """A negative or zero value for a numeric key must raise ConfigError at
+    load time instead of surfacing as a traceback deep in the run (e.g.
+    Semaphore(-5)) -- see linksanity-6lm. Runs on the *effective* config, so
+    it must catch both a file value and a CLI override (which bypasses the
+    _int helper via a direct setattr)."""
+
+    @pytest.mark.parametrize("key", ["workers", "playwright_workers", "timeout", "max_pages"])
+    @pytest.mark.parametrize("bad_value", [0, -5])
+    def test_floor_of_one_rejects_zero_and_negative(
+        self, tmp_path: Path, key: str, bad_value: int
+    ) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text(f"{key} = {bad_value}\n")
+        with pytest.raises(ConfigError, match=rf"{key}.*must be >= 1, got {bad_value}"):
+            load_config(toml_path=p)
+
+    @pytest.mark.parametrize("key", ["retry", "max_redirects", "cache_ttl"])
+    def test_floor_of_zero_rejects_negative(self, tmp_path: Path, key: str) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text(f"{key} = -1\n")
+        with pytest.raises(ConfigError, match=rf"{key}.*must be >= 0, got -1"):
+            load_config(toml_path=p)
+
+    @pytest.mark.parametrize("key", ["retry", "max_redirects", "cache_ttl"])
+    def test_floor_of_zero_accepts_zero(self, tmp_path: Path, key: str) -> None:
+        """Regression guard: 0 is a legitimate setting for these three keys
+        (no retries / don't follow redirects / always expired) -- must not
+        be over-tightened to reject it."""
+        p = tmp_path / "linksanity.toml"
+        p.write_text(f"{key} = 0\n")
+        cfg = load_config(toml_path=p)
+        assert getattr(cfg, key) == 0
+
+    def test_valid_values_still_load_unchanged(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = 8\nplaywright_workers = 3\ntimeout = 15\nmax_pages = 100\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.workers == 8
+        assert cfg.playwright_workers == 3
+        assert cfg.timeout == 15
+        assert cfg.max_pages == 100
+
+    def test_keys_absent_still_load_defaults(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "nonexistent.toml")
+        assert cfg == Config()
+
+    def test_file_supplied_out_of_range_names_the_file(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = -5\n")
+        with pytest.raises(ConfigError, match=re.escape(str(p))):
+            load_config(toml_path=p)
+
+    def test_cli_supplied_out_of_range_does_not_name_a_file(self, tmp_path: Path) -> None:
+        """The value came from a CLI override, not the (nonexistent) file
+        load_config was pointed at -- the error must not claim a location
+        that did not actually supply the value."""
+        p = tmp_path / "linksanity.toml"
+        with pytest.raises(ConfigError) as exc_info:
+            load_config(toml_path=p, workers=-5)
+        assert str(p) not in str(exc_info.value)
+        assert "workers" in str(exc_info.value)
+        assert "must be >= 1, got -5" in str(exc_info.value)
+
+    def test_cli_override_wins_over_file_for_location_attribution(self, tmp_path: Path) -> None:
+        """workers is invalid in the file too, but the CLI override takes
+        precedence over it (existing setattr semantics) -- the effective
+        value came from the CLI, so the error must not name the file even
+        though the file also set this key."""
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = -1\n")
+        with pytest.raises(ConfigError) as exc_info:
+            load_config(toml_path=p, workers=-5)
+        assert str(p) not in str(exc_info.value)
+        assert "got -5" in str(exc_info.value)
 
 
 class TestUrlIsSkipped:

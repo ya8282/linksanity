@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "linksanity"
-version = "0.2.0"
+version = "0.2.1"
 description = "Detect broken links in Markdown, reStructuredText, and HTML documentation"
 readme = "README.md"
 license = { text = "MIT" }

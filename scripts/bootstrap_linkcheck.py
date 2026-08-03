@@ -203,9 +203,9 @@ jobs:
   linkcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4   # only needed if you keep a .linksanity-skip file in the repo
+      - uses: actions/checkout@v7   # only needed if you keep a .linksanity-skip file in the repo
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -222,7 +222,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linkcheck-results
           path: crawl-results.json

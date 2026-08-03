@@ -116,6 +116,31 @@ def test_workflow_includes_broken_link_reporting_step() -> None:
     assert preceding_lines  # sanity: report step isn't the very first line
 
 
+def test_workflow_pins_node24_era_actions() -> None:
+    """GitHub force-runs node20 actions on Node 24 with a deprecation
+    annotation; node20 support is being removed. The generated workflow must
+    pin the node24-era majors, not the older node20 ones."""
+    yaml_text = bootstrap_linkcheck.render_workflow(
+        url="https://example.com",
+        schedule="0 8 * * 1",
+        max_pages=200,
+        check_anchors=False,
+        block_analytics=True,
+    )
+
+    assert "actions/checkout@v7" in yaml_text
+    assert "actions/setup-python@v7" in yaml_text
+    assert "actions/upload-artifact@v7" in yaml_text
+    assert "@v4" not in yaml_text
+    assert "@v5" not in yaml_text
+
+    # The trailing comment on the checkout line must survive the version bump.
+    checkout_line = next(
+        line for line in yaml_text.splitlines() if "actions/checkout@v7" in line
+    )
+    assert "only needed if you keep a .linksanity-skip file" in checkout_line
+
+
 def test_jq_filters_include_too_many_redirects() -> None:
     """linksanity-4cx: a redirect-loop-only run (status=too_many_redirects) must
     not be silently omitted from the count, the annotations, or the summary

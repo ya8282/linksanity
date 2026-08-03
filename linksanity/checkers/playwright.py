@@ -7,6 +7,7 @@ import contextlib
 from typing import Any
 from urllib.parse import urlparse
 
+from linksanity.checkers import http
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 
 _SKIP_SCHEMES = ("mailto:", "javascript:", "data:", "blob:")
@@ -34,6 +35,20 @@ ANALYTICS_DOMAINS: frozenset[str] = frozenset({
     "intercomcdn.com",
     "widget.intercom.io",
 })
+
+
+def _is_download_abort(exc: Exception) -> bool:
+    """True if `exc` is Playwright aborting a navigation that became a download.
+
+    Chromium headless doesn't render PDFs (or anything served with
+    Content-Disposition: attachment) inline; it turns the navigation into a
+    download instead, and page.goto() can't return a response for that.
+    Playwright has no typed exception for this, only this message text.
+
+    ponytail: a substring match on Playwright's error message, not a stable
+    API — it will need updating if Playwright's wording ever changes.
+    """
+    return "Download is starting" in str(exc)
 
 
 def _require_playwright() -> None:
@@ -185,6 +200,10 @@ async def check(
                     cell=cell,
                 )
             except PlaywrightError as exc:
+                if _is_download_abort(exc):
+                    return await http.check(
+                        url, source_file, line, link_type, timeout=timeout, cell=cell
+                    )
                 return LinkResult(
                     source_file=source_file, line=line, url=url,
                     link_type=link_type, status=LinkStatus.ERROR,
@@ -295,6 +314,9 @@ async def crawl_page(
                     element_ids = set()
                 return result, links, element_ids
             except PlaywrightError as exc:
+                if _is_download_abort(exc):
+                    result = await http.check(url, source_file, line, link_type, timeout=timeout)
+                    return result, [], set()
                 return LinkResult(
                     source_file=source_file, line=line, url=url,
                     link_type=link_type, status=LinkStatus.ERROR,

@@ -16,7 +16,7 @@ from playwright.async_api import Error as PlaywrightError
 
 from linksanity.checkers.playwright import check, crawl_page
 from linksanity.fixer import build_redirect_proposals, is_permanent_redirect
-from linksanity.queue import LinkQueue, LinkStatus, LinkType
+from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
 
 URL = "https://example.com/page"
 
@@ -485,3 +485,72 @@ class TestCrawlPageClientSideRedirectIsNotFlagged:
         assert result.resolved_url is None
         assert result.redirect_chain is None
         assert result.redirect_codes is None
+
+
+class TestDownloadAbortFallback:
+    """linksanity-tkg: Chromium headless turns a PDF (or any
+    Content-Disposition: attachment) navigation into a download, so
+    page.goto() never returns a response and Playwright raises 'Download is
+    starting' instead. Both check() and crawl_page() must fall back to the
+    httpx checker for that one URL rather than reporting ERROR."""
+
+    @pytest.mark.asyncio
+    async def test_check_falls_back_to_http_on_download_abort(self) -> None:
+        ctx = _mock_playwright_context(status=200, resolved_url=URL)
+        page = ctx.__aenter__.return_value.chromium.launch.return_value.new_page.return_value
+        page.goto.side_effect = PlaywrightError("Download is starting")
+        fallback_result = LinkResult(
+            source_file="f", line=1, url=URL,
+            link_type=LinkType.EXTERNAL, status=LinkStatus.OK, http_code=200,
+        )
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+            patch(
+                "linksanity.checkers.playwright.http.check",
+                AsyncMock(return_value=fallback_result),
+            ) as mock_http_check,
+        ):
+            result = await check(URL, "f", 1, LinkType.EXTERNAL, timeout=10, cell=2)
+        assert result is fallback_result
+        mock_http_check.assert_awaited_once_with(
+            URL, "f", 1, LinkType.EXTERNAL, timeout=10, cell=2
+        )
+
+    @pytest.mark.asyncio
+    async def test_check_non_download_error_still_reports_error(self) -> None:
+        ctx = _mock_playwright_context(status=200, resolved_url=URL)
+        page = ctx.__aenter__.return_value.chromium.launch.return_value.new_page.return_value
+        page.goto.side_effect = PlaywrightError("Timeout 10000ms exceeded")
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+            patch("linksanity.checkers.playwright.http.check") as mock_http_check,
+        ):
+            result = await check(URL, "f", 1, LinkType.EXTERNAL)
+        assert result.status == LinkStatus.ERROR
+        assert result.error == "Timeout 10000ms exceeded"
+        mock_http_check.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_crawl_page_falls_back_to_http_on_download_abort(self) -> None:
+        ctx = _mock_crawl_context(status=200, resolved_url=URL)
+        page = ctx.__aenter__.return_value.chromium.launch.return_value.new_page.return_value
+        page.goto.side_effect = PlaywrightError("Download is starting")
+        fallback_result = LinkResult(
+            source_file="f", line=1, url=URL,
+            link_type=LinkType.EXTERNAL, status=LinkStatus.OK, http_code=200,
+        )
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+            patch(
+                "linksanity.checkers.playwright.http.check",
+                AsyncMock(return_value=fallback_result),
+            ) as mock_http_check,
+        ):
+            result, links, ids = await crawl_page(URL, "f", 1, LinkType.EXTERNAL, timeout=10)
+        assert result is fallback_result
+        assert links == []
+        assert ids == set()
+        mock_http_check.assert_awaited_once_with(URL, "f", 1, LinkType.EXTERNAL, timeout=10)

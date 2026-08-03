@@ -34,7 +34,7 @@ DEFAULT_WORKFLOW_NAME = "linkcheck.yml"
 # than floating on latest: this script renders flags from the dev tree, so an
 # unpinned install silently drifts into "No such option" failures whenever the
 # CLI gains or renames a flag. Bump on release.
-DEFAULT_LINKSANITY_VERSION = "0.2.0"
+DEFAULT_LINKSANITY_VERSION = "0.2.1"
 
 # `crawl --check-anchors` did not exist until 0.2.0 -- it was scan-only before
 # that. Emitting it against an older pin fails the job with "No such option".

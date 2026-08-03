@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -276,6 +277,14 @@ def test_version_tuple_orders_releases() -> None:
     assert vt("0.1.1") < vt("0.2.0")
     assert vt("0.2.0") < vt("0.10.0")
     assert vt("0.2.0rc1") == vt("0.2.0")
+
+
+def test_default_linksanity_version_matches_pyproject() -> None:
+    """DEFAULT_LINKSANITY_VERSION has drifted from pyproject.toml's version
+    once already (linksanity-97d) -- catch the next release that forgets to
+    bump it."""
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert pyproject["project"]["version"] == bootstrap_linkcheck.DEFAULT_LINKSANITY_VERSION
 
 
 def test_yes_requires_url(tmp_path: Path) -> None:

@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import re
+from enum import Enum
 from pathlib import Path
 
 import typer
@@ -28,6 +29,26 @@ app = typer.Typer(
     help="Detect broken links in Markdown, reStructuredText, and HTML documentation.",
     no_args_is_help=True,
 )
+
+
+class OutputFormat(Enum):
+    """The single definition of the valid --format / config.format strings.
+
+    Config.format itself stays a plain str (linksanity.config.Config) --
+    this enum only exists so the format strings aren't spelled out
+    separately in each command's allow-list and error message.
+    """
+
+    CONSOLE = "console"
+    JSON = "json"
+    CSV = "csv"
+
+
+# Per-command allow-lists, derived from OutputFormat so there is exactly one
+# place that spells out the valid format strings.
+_ALL_FORMATS: tuple[str, ...] = tuple(f.value for f in OutputFormat)
+_CONSOLE_JSON_FORMATS: tuple[str, ...] = (OutputFormat.CONSOLE.value, OutputFormat.JSON.value)
+_STRUCTURED_FORMATS: tuple[str, ...] = (OutputFormat.JSON.value, OutputFormat.CSV.value)
 
 
 def _annotations_enabled(config: Config) -> bool:
@@ -102,7 +123,7 @@ def _announce_config(path: Path | None, format: str, output: str | None) -> None
     fires immediately from _resolve_config_path, before any config is
     loaded.
     """
-    if format in ("json", "csv") and not output:
+    if format in _STRUCTURED_FORMATS and not output:
         return
     if path is None:
         typer.echo("[linksanity] no linksanity.toml found; using defaults", err=True)
@@ -142,6 +163,30 @@ def _load_config_or_exit(config_path: Path | None, **overrides: object) -> Confi
     except ConfigError as exc:
         typer.echo(f"[linksanity] {exc}", err=True)
         raise typer.Exit(2) from exc
+
+
+def _load_and_validate(
+    config_file: str | None, allowed: tuple[str, ...], **overrides: object
+) -> Config:
+    """Resolve, load, announce, and validate --format -- in that order.
+
+    Announce happens after loading so the suppression decision keys off the
+    *effective* format/output (from --format/--output or linksanity.toml,
+    whichever won), not just the raw CLI flags (linksanity-1pq).
+    """
+    config_path = _resolve_config_path(config_file)
+    config = _load_config_or_exit(config_path, **overrides)
+    _announce_config(config_path, config.format, config.output)
+
+    if config.format not in allowed:
+        joined = ", ".join(allowed)
+        typer.echo(
+            f"[linksanity] --format must be one of: {joined} (got {config.format!r})",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    return config
 
 
 @app.command()
@@ -273,19 +318,7 @@ def scan(
     if skip_set:
         overrides["skip_urls"] = skip_set
 
-    config_path = _resolve_config_path(config_file)
-    config = _load_config_or_exit(config_path, **overrides)
-    # Announce after loading so the suppression decision keys off the
-    # *effective* format/output (from --format/--output or linksanity.toml,
-    # whichever won), not just the raw CLI flags (linksanity-1pq).
-    _announce_config(config_path, config.format, config.output)
-
-    if config.format not in ("console", "json", "csv"):
-        typer.echo(
-            f"[linksanity] --format must be one of: console, json, csv (got {config.format!r})",
-            err=True,
-        )
-        raise typer.Exit(2)
+    config = _load_and_validate(config_file, _ALL_FORMATS, **overrides)
 
     if config.js_domains:
         try:
@@ -522,16 +555,7 @@ def fix(
     if skip_set:
         overrides["skip_urls"] = skip_set
 
-    config_path = _resolve_config_path(config_file)
-    config = _load_config_or_exit(config_path, **overrides)
-    _announce_config(config_path, config.format, config.output)
-
-    if config.format not in ("console", "json"):
-        typer.echo(
-            f"[linksanity] --format must be one of: console, json (got {config.format!r})",
-            err=True,
-        )
-        raise typer.Exit(2)
+    config = _load_and_validate(config_file, _CONSOLE_JSON_FORMATS, **overrides)
 
     if config.js_domains:
         try:
@@ -684,16 +708,7 @@ def crawl(
     if block_analytics:
         overrides["block_analytics"] = True
 
-    config_path = _resolve_config_path(config_file)
-    config = _load_config_or_exit(config_path, **overrides)
-    _announce_config(config_path, config.format, config.output)
-
-    if config.format not in ("console", "json", "csv"):
-        typer.echo(
-            f"[linksanity] --format must be one of: console, json, csv (got {config.format!r})",
-            err=True,
-        )
-        raise typer.Exit(2)
+    config = _load_and_validate(config_file, _ALL_FORMATS, **overrides)
 
     if github_issue and not repo and not config.github_repo:
         typer.echo("[linksanity] --repo is required with --github-issue", err=True)

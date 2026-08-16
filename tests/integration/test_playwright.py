@@ -86,6 +86,34 @@ class TestCheckLink:
         assert result.status == LinkStatus.BROKEN
         assert result.http_code == 404
 
+    @pytest.mark.asyncio
+    async def test_pdf_download_falls_back_to_http_check(self, site_url: str) -> None:
+        """Canary for the unpinned "Download is starting" substring match.
+
+        Chromium turns navigation to a PDF into a download and Playwright
+        raises an untyped error containing that exact wording;
+        `_is_download_abort` substring-matches it to fall back to
+        `http.check()`. There is no typed Playwright exception for this, so
+        this test is the only thing that would catch Playwright rewording
+        that message and silently regressing every downloadable URL to
+        LinkStatus.ERROR. If this test fails, check whether Playwright's
+        download-abort error text changed and update the substring in
+        `_is_download_abort` accordingly.
+
+        The fixture is served from 127.0.0.1, so a successful fallback into
+        `http.check()` resolves to LinkStatus.SKIPPED (its private/loopback
+        host guard fires before any request) rather than OK — that SKIPPED
+        result, with this specific error message, is only reachable through
+        the download-abort branch, so it's still an unambiguous signal that
+        the fallback fired. If `_is_download_abort` stops matching, `check()`
+        takes the other branch instead and returns LinkStatus.ERROR.
+        """
+        result = await check(
+            f"{site_url}/downloadable.pdf", "test", 1, LinkType.EXTERNAL, timeout=10
+        )
+        assert result.status == LinkStatus.SKIPPED
+        assert result.error == "skipped: private/loopback address"
+
 
 class TestImportError:
     def test_missing_playwright_raises_import_error(

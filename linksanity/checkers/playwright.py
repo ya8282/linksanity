@@ -47,6 +47,10 @@ def _is_download_abort(exc: Exception) -> bool:
 
     ponytail: a substring match on Playwright's error message, not a stable
     API — it will need updating if Playwright's wording ever changes.
+    Guarded by the canary
+    tests/integration/test_playwright.py::TestCheckLink::test_pdf_download_falls_back_to_http_check,
+    which drives a real Chromium download and fails if this substring stops
+    matching.
     """
     return "Download is starting" in str(exc)
 

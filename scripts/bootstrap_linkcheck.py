@@ -120,12 +120,11 @@ def render_workflow(
     # file=/line= to attach -- fold the source page into the message text
     # instead. This step decides the job's pass/fail verdict itself, from
     # failing_count below, rather than deferring to the crawl step's exit
-    # code: on the published DEFAULT_LINKSANITY_VERSION pin (0.2.0), crawl's
-    # own exit is broken+error only, so a too_many_redirects-only run exits 0
-    # there (that status only started failing crawl's own exit on main,
-    # unreleased as of this writing). Keying the verdict off
-    # FAILING_STATUS_VALUES here keeps it correct no matter which linksanity
-    # version is pinned.
+    # code: the workflow supports pinning an arbitrary linksanity --version,
+    # and older pins fail crawl's own exit on a narrower set of statuses than
+    # FAILING_STATUS_VALUES lists. Keying the verdict off
+    # FAILING_STATUS_VALUES here keeps it correct across every pin, rather
+    # than tracking whatever the current default happens to be.
     status_select = _jq_status_select()
     report_step = r"""      - name: Report failing links
         if: always()

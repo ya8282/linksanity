@@ -287,6 +287,24 @@ def test_default_linksanity_version_matches_pyproject() -> None:
     assert pyproject["project"]["version"] == bootstrap_linkcheck.DEFAULT_LINKSANITY_VERSION
 
 
+def test_failing_status_values_matches_queue_failing_statuses() -> None:
+    """bootstrap_linkcheck.FAILING_STATUS_VALUES is deliberately NOT linked to
+    linksanity.queue.FAILING_STATUSES by an import -- the script must stay
+    importable without the linksanity package installed, and the rendered
+    workflow installs a pinned PyPI release rather than this dev tree (see
+    scripts/bootstrap_linkcheck.py:43-50). This test is the only thing
+    keeping the two constants in step.
+
+    If this fires: someone added or removed a member of
+    queue.FAILING_STATUSES. Update FAILING_STATUS_VALUES to match. Adding a
+    status the pinned older release never emits is harmless -- the jq
+    `select` in the generated workflow simply never matches it.
+    """
+    from linksanity.queue import FAILING_STATUSES
+
+    assert set(bootstrap_linkcheck.FAILING_STATUS_VALUES) == {s.value for s in FAILING_STATUSES}
+
+
 def test_yes_requires_url(tmp_path: Path) -> None:
     result = _run(["--repo", str(tmp_path), "--yes"])
     assert result.returncode != 0
@@ -295,12 +313,11 @@ def test_yes_requires_url(tmp_path: Path) -> None:
 
 # --- linksanity-4cx follow-up: the report step now owns the pass/fail verdict ---
 #
-# Rationale: DEFAULT_LINKSANITY_VERSION (0.2.0) is a published release whose
-# `crawl` exit code is `broken + error` only -- `too_many_redirects` only
-# started failing crawl's own exit on `main`, which is unreleased. Under the
-# 0.2.0 pin a redirect-loop-only run would exit 0 from `crawl` itself, so the
-# workflow must decide its own verdict from the results JSON instead of
-# trusting the crawl step's exit code.
+# Rationale: the workflow supports pinning an arbitrary --version. Older pins
+# fail crawl's own exit code on a narrower set of statuses than
+# FAILING_STATUS_VALUES lists, so the workflow decides its own verdict from
+# the results JSON instead of trusting the crawl step's exit code -- that way
+# it stays correct across every pin.
 
 
 def _report_step_run_block(yaml_text: str) -> str:

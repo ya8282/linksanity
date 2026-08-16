@@ -195,7 +195,7 @@ https://staging.example.com/*
 https://internal.corp.example.com/*
 ```
 
-**Report broken links to a GitHub Issue** — useful for scheduled runs that find regressions after merge. Creating or updating the issue needs `issues: write`, so extend the job's `permissions:` block declared above from `contents: read` to:
+**Report failing links to a GitHub Issue** — useful for scheduled runs that find regressions after merge. Creating or updating the issue needs `issues: write`, so extend the job's `permissions:` block declared above from `contents: read` to:
 
 ```yaml
 permissions:
@@ -204,7 +204,7 @@ permissions:
 ```
 
 ```yaml
-      - name: Report broken links
+      - name: Report failing links
         if: failure()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

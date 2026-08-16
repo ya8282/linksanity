@@ -101,5 +101,6 @@ linksanity in other tools.
 Initial public release. `scan` and `crawl` over Markdown, reStructuredText, and
 HTML, with Playwright-backed checking for JS-rendered pages.
 
+[0.2.1]: https://github.com/ya8282/linksanity/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ya8282/linksanity/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/ya8282/linksanity/releases/tag/v0.1.1

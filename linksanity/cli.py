@@ -57,7 +57,7 @@ def _annotations_enabled(config: Config) -> bool:
     if os.environ.get("GITHUB_ACTIONS") != "true":
         return False
     # Assumption 6: never corrupt bare-stdout structured output
-    return not (config.format in ("json", "csv") and not config.output)
+    return not (config.format in _STRUCTURED_FORMATS and not config.output)
 
 
 def _run_annotations_reporter(results: list[LinkResult]) -> None:

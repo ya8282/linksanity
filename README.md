@@ -24,7 +24,7 @@ ok=38   broken=1   redirect=1   skipped=0
 - **Exit codes** — `0` = clean, `1` = broken links found (ideal for CI)
 - **Multiple formats** — console (Rich), JSON, CSV; optional Markdown summary report
 - **Anchor validation** — opt-in `--check-anchors` flag
-- **GitHub Issues** — create or update an issue summarising broken links
+- **GitHub Issues** — create or update an issue summarising failing links (broken, checker errors, and redirect loops)
 - **Ignore domains** — skip domains you don't control
 - **JS-rendered pages** — route specific domains through Playwright in scan mode
 - **Retry logic** — exponential back-off on 429/503; HEAD→GET fallback on 405
@@ -291,11 +291,11 @@ narrow with `files:` together:
 
 ### GitHub Issue reporting
 
-Use `--github-issue` when you want broken links surfaced as a trackable GitHub Issue rather than just a failed CI run. It creates or updates a single `[linksanity]` issue listing every broken URL, so the team has a persistent record to triage — not just a red check mark that disappears on the next push.
+Use `--github-issue` when you want failing links (broken, checker errors, or redirect loops) surfaced as a trackable GitHub Issue rather than just a failed CI run. It creates or updates a single issue titled `[linksanity] N failing link(s) found`, refreshing both the title's count and the body's link table on every run, so the team has a persistent record to triage — not just a red check mark that disappears on the next push.
 
 **When to use it:**
 
-- **Scheduled runs** — a weekly cron job catches link rot that crept in after your last merge. linksanity only creates or updates the issue while links are broken — it never closes or comments on it once they're fixed, so close it yourself.
+- **Scheduled runs** — a weekly cron job catches link rot that crept in after your last merge. linksanity only creates or updates the issue while links are failing — it never closes or comments on it once they're fixed, so close it yourself.
 - **Repos without branch protection** — if broken links won't block a PR merge, an issue is the only signal that survives past the CI run.
 - **Large docs sites** — when dozens of links break at once (e.g. a domain migration), a single issue is easier to triage than scrolling through CI logs.
 

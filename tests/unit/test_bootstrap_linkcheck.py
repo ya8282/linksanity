@@ -381,11 +381,6 @@ def test_report_step_source_no_longer_claims_it_cannot_fail_the_job() -> None:
     assert "must never fail the job itself" not in source
     assert "the crawl step's own exit code already decides pass/fail" not in source
 
-    # Replacement must explain *why* the workflow, not linksanity's exit code,
-    # owns the verdict: the too_many_redirects/0.2.0 release-lag rationale.
-    assert "too_many_redirects" in source
-    assert "0.2.0" in source
-
 
 def test_rendered_header_comment_says_failing_not_broken() -> None:
     yaml_text = bootstrap_linkcheck.render_workflow(

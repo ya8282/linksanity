@@ -293,6 +293,8 @@ narrow with `files:` together:
 
 Use `--github-issue` when you want failing links (broken, checker errors, or redirect loops) surfaced as a trackable GitHub Issue rather than just a failed CI run. It creates or updates a single issue titled `[linksanity] N failing link(s) found`, refreshing both the title's count and the body's link table on every run, so the team has a persistent record to triage — not just a red check mark that disappears on the next push.
 
+linksanity finds its existing issue by scanning up to 1000 open issues, most-recently-updated first; on a repo with more open issues than that, it warns on stderr and may open a second issue instead of updating the first.
+
 **When to use it:**
 
 - **Scheduled runs** — a weekly cron job catches link rot that crept in after your last merge. linksanity only creates or updates the issue while links are failing — it never closes or comments on it once they're fixed, so close it yourself.

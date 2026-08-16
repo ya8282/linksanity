@@ -96,6 +96,12 @@ def _find_existing_issue(token: str, repo: str, title: str) -> int | None:
     rel="next"` response header, stopping as soon as a match is found. The
     `issues` endpoint also returns pull requests, which are skipped via the
     `pull_request` key present only on PR entries.
+
+    The walk gives up after `_MAX_PAGES` pages (1000 open issues), warning
+    on stderr and returning None, which causes `report()` to create a new
+    issue instead of updating the existing one. Sorting by
+    `updated`/`desc` is what keeps this adequate in practice, since the
+    linksanity issue is pinned near page 1 by the PATCH on every run.
     """
     url: str = f"{_API}/repos/{repo}/issues"
     params: dict[str, str | int] | None = {

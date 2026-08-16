@@ -7,6 +7,7 @@ import fnmatch
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 
 @dataclass
@@ -86,7 +87,7 @@ def _load_toml(path: Path) -> dict[str, object]:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
 
 
-def _location(path: Path | None) -> str:
+def _error_suffix(path: Path | None) -> str:
     return f" in {path}" if path is not None else ""
 
 
@@ -113,43 +114,42 @@ def _type_name(v: object) -> str:
     return type(v).__name__
 
 
-def _int(data: dict[str, object], key: str, default: int, path: Path | None = None) -> int:
+def _check_type(
+    v: object, key: str, path: Path | None, types: tuple[type, ...], expected: str
+) -> None:
+    if not isinstance(v, types):
+        raise ConfigError(
+            f"invalid value for '{key}'{_error_suffix(path)}: expected {expected}, got {_type_name(v)}"
+        )
+
+
+def _int(data: dict[str, object], key: str, default: int, path: Path | None) -> int:
     if key not in data:
         return default
     v = data[key]
-    if not isinstance(v, (int, float, str)):
-        raise ConfigError(
-            f"invalid value for '{key}'{_location(path)}: expected an integer, got {_type_name(v)}"
-        )
+    _check_type(v, key, path, (int, float, str), "an integer")
     try:
-        return int(v)
-    except ConfigError:
-        raise
+        return int(cast("int | float | str", v))
     except (ValueError, OverflowError) as exc:
-        location = _location(path)
-        raise ConfigError(f"invalid value for '{key}'{location}: {v!r} is not a valid integer") from exc
+        raise ConfigError(
+            f"invalid value for '{key}'{_error_suffix(path)}: {v!r} is not a valid integer"
+        ) from exc
 
 
-def _bool(data: dict[str, object], key: str, default: bool, path: Path | None = None) -> bool:
+def _bool(data: dict[str, object], key: str, default: bool, path: Path | None) -> bool:
     if key not in data:
         return default
     v = data[key]
-    if not isinstance(v, (bool, int)):
-        raise ConfigError(
-            f"invalid value for '{key}'{_location(path)}: expected a boolean, got {_type_name(v)}"
-        )
+    _check_type(v, key, path, (bool, int), "a boolean")
     return bool(v)
 
 
-def _str(data: dict[str, object], key: str, default: str, path: Path | None = None) -> str:
+def _str(data: dict[str, object], key: str, default: str, path: Path | None) -> str:
     if key not in data:
         return default
     v = data[key]
-    if not isinstance(v, str):
-        raise ConfigError(
-            f"invalid value for '{key}'{_location(path)}: expected a string, got {_type_name(v)}"
-        )
-    return v
+    _check_type(v, key, path, (str,), "a string")
+    return cast(str, v)
 
 
 # Minimum accepted value for each numeric key that has a meaningful floor.
@@ -193,21 +193,16 @@ def _validate_ranges(
         if value >= minimum:
             continue
         from_cli = key in overrides and overrides[key] is not None
-        location = "" if from_cli else _location(path if key in data else None)
+        location = "" if from_cli else _error_suffix(path if key in data else None)
         raise ConfigError(
             f"invalid value for '{key}'{location}: must be >= {minimum}, got {value}"
         )
 
 
-def _bool_or_none(data: dict[str, object], key: str, path: Path | None = None) -> bool | None:
+def _bool_or_none(data: dict[str, object], key: str, path: Path | None) -> bool | None:
     if key not in data:
         return None
-    v = data[key]
-    if not isinstance(v, (bool, int)):
-        raise ConfigError(
-            f"invalid value for '{key}'{_location(path)}: expected a boolean, got {_type_name(v)}"
-        )
-    return bool(v)
+    return _bool(data, key, False, path)
 
 
 def load_config(
@@ -221,27 +216,16 @@ def load_config(
     if search_path.exists():
         data = _load_toml(search_path)
 
-    def _domain_set(key: str) -> set[str]:
+    def _string_set(key: str, *, lower: bool = False) -> set[str]:
         if key not in data:
             return set()
         raw = data[key]
         if not isinstance(raw, list):
             raise ConfigError(
-                f"invalid value for '{key}'{_location(search_path)}: "
+                f"invalid value for '{key}'{_error_suffix(search_path)}: "
                 f"expected a list of strings, got {_type_name(raw)}"
             )
-        return {str(d).lower() for d in raw}
-
-    def _url_set(key: str) -> set[str]:
-        if key not in data:
-            return set()
-        raw = data[key]
-        if not isinstance(raw, list):
-            raise ConfigError(
-                f"invalid value for '{key}'{_location(search_path)}: "
-                f"expected a list of strings, got {_type_name(raw)}"
-            )
-        return {str(u) for u in raw}
+        return {str(v).lower() if lower else str(v) for v in raw}
 
     cfg = Config(
         workers=_int(data, "workers", Config.workers, search_path),
@@ -255,9 +239,9 @@ def load_config(
         myst=_bool(data, "myst", Config.myst, search_path),
         link_style=_str(data, "link_style", "", search_path) or None,
         max_pages=_int(data, "max_pages", Config.max_pages, search_path),
-        ignore_domains=_domain_set("ignore_domains"),
-        js_domains=_domain_set("js_domains"),
-        skip_urls=_url_set("skip_urls"),
+        ignore_domains=_string_set("ignore_domains", lower=True),
+        js_domains=_string_set("js_domains", lower=True),
+        skip_urls=_string_set("skip_urls"),
         block_analytics=_bool(data, "block_analytics", Config.block_analytics, search_path),
         format=_str(data, "format", Config.format, search_path),
         max_redirects=_int(data, "max_redirects", Config.max_redirects, search_path),

@@ -118,7 +118,7 @@ def _announce_config(path: Path | None, format: str, output: str | None) -> None
     line and `format = "json"` in linksanity.toml produce identical noise
     behaviour. Deferring this past config loading means it no longer prints
     ahead of a config-parse error, but ConfigError messages already name the
-    offending path (see linksanity.config._location), so nothing is lost
+    offending path (see linksanity.config._error_suffix), so nothing is lost
     there. The "--config file not found" error is unaffected -- that still
     fires immediately from _resolve_config_path, before any config is
     loaded.

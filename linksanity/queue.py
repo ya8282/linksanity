@@ -23,6 +23,15 @@ FAILING_STATUSES = frozenset(
 )
 
 
+def classify_status(code: int, was_redirected: bool) -> LinkStatus:
+    """Classify an HTTP outcome: a 4xx/5xx code beats a redirect."""
+    if code >= 400:
+        return LinkStatus.BROKEN
+    if was_redirected:
+        return LinkStatus.REDIRECT
+    return LinkStatus.OK
+
+
 class LinkType(Enum):
     EXTERNAL = "external"
     INTERNAL = "internal"

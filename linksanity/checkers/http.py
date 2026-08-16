@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import httpx
 
 from linksanity._meta import HOMEPAGE_URL, VERSION
-from linksanity.queue import LinkResult, LinkStatus, LinkType
+from linksanity.queue import LinkResult, LinkStatus, LinkType, classify_status
 
 _RETRY_ON = {429, 503}
 _FALLBACK_ON = {405}
@@ -211,12 +211,7 @@ def _make_result(
     chain = [*(u for u, _ in history), resolved_url] if was_redirected else None
     codes = [c for _, c in history] if was_redirected else None
 
-    if code >= 400:
-        status = LinkStatus.BROKEN
-    elif was_redirected:
-        status = LinkStatus.REDIRECT
-    else:
-        status = LinkStatus.OK
+    status = classify_status(code, was_redirected)
 
     return LinkResult(
         source_file=source_file,

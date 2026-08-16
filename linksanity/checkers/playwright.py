@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from linksanity.checkers import http
-from linksanity.queue import LinkResult, LinkStatus, LinkType
+from linksanity.queue import LinkResult, LinkStatus, LinkType, classify_status
 
 _SKIP_SCHEMES = ("mailto:", "javascript:", "data:", "blob:")
 
@@ -106,6 +106,36 @@ async def _redirect_chain(
     return chain, codes
 
 
+async def _navigation_outcome(
+    response: Any, resolved: str
+) -> tuple[LinkStatus, str | None, list[str] | None, list[int] | None]:
+    """Classify a completed navigation and reconstruct its redirect chain.
+
+    `page.url` is the final navigated URL, which httpx-style string
+    comparison would flag as "redirected" on normalization alone (host
+    casing, scheme casing, dot-segments) even with zero HTTP hops.
+    `request.redirected_from` is Playwright's actual signal for a real
+    navigation-level redirect: non-None iff this request replaced an
+    earlier one that received a redirect response.
+
+    linksanity-yvh (deliberate, not an oversight): this also means client-
+    side redirects (meta-refresh, JS `location` changes) are never flagged
+    here. They carry no HTTP status code, so flagging them would
+    reintroduce the exact REDIRECT-with-null-codes symptom beads vid/f8t
+    removed, and the JS destination page.url lands on isn't a stable
+    rewrite target — it can depend on cookies, timing, or client state. The
+    link itself still resolves (200, content loads); we just don't rewrite
+    it.
+
+    Returns (status, resolved_url, chain, codes); resolved_url is only
+    populated when a real navigation-level redirect occurred.
+    """
+    was_redirected = response.request.redirected_from is not None
+    status = classify_status(response.status, was_redirected)
+    chain, codes = await _redirect_chain(response, resolved)
+    return status, (resolved if was_redirected else None), chain, codes
+
+
 async def extract_links(url: str, *, semaphore: asyncio.Semaphore | None = None) -> list[str]:
     """Launch a headless browser, render the page, and return all href values.
 
@@ -171,30 +201,16 @@ async def check(
                     )
                 code = response.status
                 resolved = page.url
-                # `page.url` is the final navigated URL, which httpx-style string
-                # comparison would flag as "redirected" on normalization alone
-                # (host casing, scheme casing, dot-segments) even with zero HTTP
-                # hops. `request.redirected_from` is Playwright's actual signal
-                # for a real navigation-level redirect: non-None iff this
-                # request replaced an earlier one that received a redirect
-                # response.
-                #
-                # linksanity-yvh: this also means client-side redirects
-                # (meta-refresh, JS `location` changes) are deliberately not
-                # flagged — see the fuller note at crawl_page's matching line.
-                was_redirected = response.request.redirected_from is not None
-                if code >= 400:
-                    status = LinkStatus.BROKEN
-                elif was_redirected:
-                    status = LinkStatus.REDIRECT
-                else:
-                    status = LinkStatus.OK
-                chain, codes = await _redirect_chain(response, resolved)
+                # was_redirected/vid/yvh rationale: see _navigation_outcome's
+                # docstring above.
+                status, resolved_url, chain, codes = await _navigation_outcome(
+                    response, resolved
+                )
                 return LinkResult(
                     source_file=source_file, line=line, url=url,
                     link_type=link_type, status=status,
                     http_code=code,
-                    resolved_url=resolved if was_redirected else None,
+                    resolved_url=resolved_url,
                     redirect_chain=chain,
                     redirect_codes=codes,
                     cell=cell,
@@ -267,30 +283,16 @@ async def crawl_page(
                     await page.wait_for_load_state("networkidle", timeout=5000)
                 code = response.status
                 resolved = page.url
-                # See the matching comment in check() above: use Playwright's
-                # actual redirect signal, not a string comparison of URLs.
-                #
-                # linksanity-yvh (deliberate, not an oversight): this also means
-                # client-side redirects (meta-refresh, JS `location` changes) are
-                # never flagged here. They carry no HTTP status code, so
-                # flagging them would reintroduce the exact REDIRECT-with-null-
-                # codes symptom beads vid/f8t removed, and the JS destination
-                # page.url lands on isn't a stable rewrite target — it can
-                # depend on cookies, timing, or client state. The link itself
-                # still resolves (200, content loads); we just don't rewrite it.
-                was_redirected = response.request.redirected_from is not None
-                if code >= 400:
-                    status = LinkStatus.BROKEN
-                elif was_redirected:
-                    status = LinkStatus.REDIRECT
-                else:
-                    status = LinkStatus.OK
-                chain, codes = await _redirect_chain(response, resolved)
+                # was_redirected/vid/yvh rationale: see _navigation_outcome's
+                # docstring above.
+                status, resolved_url, chain, codes = await _navigation_outcome(
+                    response, resolved
+                )
                 result = LinkResult(
                     source_file=source_file, line=line, url=url,
                     link_type=link_type, status=status,
                     http_code=code,
-                    resolved_url=resolved if was_redirected else None,
+                    resolved_url=resolved_url,
                     redirect_chain=chain,
                     redirect_codes=codes,
                 )

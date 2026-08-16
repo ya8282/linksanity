@@ -374,9 +374,13 @@ def _run_report_step(script: str, tmp_path: Path, results_content: str) -> subpr
     return result
 
 
-def test_report_step_source_no_longer_claims_it_cannot_fail_the_job() -> None:
-    """linksanity-4cx: the step now decides the job's verdict itself, so the
-    stale "this step must never fail the job" comment must be gone."""
+def test_report_step_source_has_no_stale_cannot_fail_comment() -> None:
+    """linksanity-4cx: tombstone, not behavioural coverage. Pins that two
+    specific stale phrasings ("this step must never fail the job" and its
+    "crawl step's own exit code already decides pass/fail" variant) stay
+    deleted from the script source. It does not verify that the step
+    actually fails the job; that's covered by
+    test_report_step_execution_too_many_redirects_fails_the_job."""
     source = SCRIPT.read_text(encoding="utf-8")
     assert "must never fail the job itself" not in source
     assert "the crawl step's own exit code already decides pass/fail" not in source
@@ -412,7 +416,7 @@ def test_report_step_contains_exit_1_on_failing_path() -> None:
 
 def test_report_step_execution_too_many_redirects_fails_the_job(tmp_path: Path) -> None:
     """The real regression: a redirect-loop-only run must fail the job even
-    though the published 0.2.0 pin's own `crawl` exit code would be 0."""
+    though older linksanity pins' own `crawl` exit code would be 0."""
     if _find_jq() is None:
         pytest.skip("jq not available")
 

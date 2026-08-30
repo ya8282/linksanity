@@ -162,8 +162,8 @@ def test_results_ranked_by_file_count_descending(tmp_path: Path) -> None:
 def test_estimate_rounds_up_to_whole_billed_minute() -> None:
     # 61s measured + 40s overhead = 101s -> ceil(101/60) = 2 billed minutes.
     # overhead is passed explicitly (not read from the module constant) so
-    # this keeps passing unchanged once _CI_OVERHEAD_UNCALIBRATED is
-    # calibrated and renamed in a later bead.
+    # this keeps passing unchanged regardless of how _CI_OVERHEAD_SECONDS
+    # is calibrated.
     assert estimate_billed_minutes(61, overhead_seconds=40) == 2
 
 

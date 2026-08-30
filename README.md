@@ -143,11 +143,11 @@ To refresh a stale baseline, re-run `init` interactively rather than pointing `-
 
 ### The cost estimate
 
-`init` reports two numbers separately rather than collapsing them into one confident figure: the scan time it just measured locally, and a modelled CI overhead (checkout, `setup-python`, pip install) added on top before rounding up to a billed minute. Treat it as an estimate, not a promise: your local run has a different egress IP, warmer DNS, and a different CPU than the GitHub Actions runner, so local wall time is a biased proxy for runner wall time. Illustrative sample output:
+`init` reports two numbers separately rather than collapsing them into one confident figure: the scan time it just measured locally, and a modelled CI overhead (runner setup, checkout, `setup-python`, pip install, artifact upload) added on top before rounding up to a billed minute. Treat it as an estimate, not a promise: your local run has a different egress IP, warmer DNS, and a different CPU than the GitHub Actions runner, so local wall time is a biased proxy for runner wall time. Illustrative sample output:
 
 ```
 Measured locally:  1m 52s   (318 unique URLs, 87 domains)
-CI overhead:      ~40s      (checkout, setup-python, pip install)
+CI overhead:      ~9s      (runner setup, checkout, python, pip install, artifact upload)
 Estimated billed: ~3 min/run   GitHub rounds each job up to a whole minute
 
 Public repo:  free
@@ -155,7 +155,7 @@ Private repo: ~3 min/run, so ~90 min/mo at 30 runs/mo (illustrative)
               against the 2,000 min/mo free allowance
 ```
 
-The `~40s` overhead figure is illustrative, not a guarantee: it comes from a fixed constant `init` adds to your measured time, not from a live check of your repo's CI run.
+The `~9s` overhead figure is illustrative, not a guarantee: it comes from a fixed constant `init` adds to your measured time, not from a live check of your repo's CI run.
 
 ### Other flags
 

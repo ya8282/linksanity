@@ -235,12 +235,18 @@ def measuring_config(toml_path: Path | None = None) -> Config:
     )
 
 
-# Fixed CI overhead (checkout, setup-python, pip install) added to the
-# locally measured wall time before rounding up to a billed minute. This is
-# an uncalibrated placeholder, not a real measurement -- a later bead
-# replaces it with a value read from a real action run and renames the
-# constant; the repo release is gated on this name no longer existing.
-_CI_OVERHEAD_UNCALIBRATED = 40.0  # seconds
+# Fixed CI overhead added to the locally measured wall time before rounding
+# up to a billed minute. Calibrated 2026-08-30 from ya8282/linksanity-action
+# run 33317218474 ("Self-test", v1 == 1f1a4d3), averaging the full non-scan
+# overhead across three representative jobs (99272756783, 99272756664,
+# 99272756800): runner provisioning (~0.6-2.2s) + actions/checkout
+# (~0.9-1.2s) + actions/setup-python (~0.16-0.19s) + pip install
+# (~5.4-6.5s, the dominant and most variable term) + actions/upload-artifact
+# (~0.7-1.3s). Per-job totals were 11.4s, 7.8s, and 8.9s; mean 9.36s,
+# rounded to 9. All five billed components are included, not just the three
+# named in the estimate's parenthetical, because provisioning and artifact
+# upload are billed minutes too and excluding them would understate cost.
+_CI_OVERHEAD_SECONDS = 9.0  # seconds
 
 # Illustrative-only constants for the private-repo cost line. `init` never
 # queries the GitHub API for a repo's actual PR volume.
@@ -249,14 +255,14 @@ _FREE_MINUTES_PER_MONTH = 2000
 
 
 def estimate_billed_minutes(
-    measured_seconds: float, overhead_seconds: float = _CI_OVERHEAD_UNCALIBRATED
+    measured_seconds: float, overhead_seconds: float = _CI_OVERHEAD_SECONDS
 ) -> int:
     """Billed minutes for one CI job: GitHub Actions rounds each job up to
     the next whole minute; `ubuntu-latest` carries a 1x multiplier.
 
     `overhead_seconds` is a parameter, not read from the module constant
-    internally, so a test pinning its value keeps passing unchanged once
-    `_CI_OVERHEAD_UNCALIBRATED` is calibrated and renamed in a later bead.
+    internally, so a test pinning its value keeps passing unchanged
+    regardless of how `_CI_OVERHEAD_SECONDS` is calibrated.
     """
     return math.ceil((measured_seconds + overhead_seconds) / 60)
 
@@ -274,7 +280,7 @@ def render_estimate(
     measured_seconds: float,
     unique_urls: int,
     unique_domains: int,
-    overhead_seconds: float = _CI_OVERHEAD_UNCALIBRATED,
+    overhead_seconds: float = _CI_OVERHEAD_SECONDS,
 ) -> list[str]:
     """Build the estimate output lines described in spec section 5.
 
@@ -292,7 +298,7 @@ def render_estimate(
         f"Measured locally:  {_format_duration(measured_seconds)}   "
         f"({unique_urls} unique URLs, {unique_domains} domains)",
         f"CI overhead:      ~{_format_duration(overhead_seconds)}      "
-        "(checkout, setup-python, pip install)",
+        "(runner setup, checkout, python, pip install, artifact upload)",
         f"Estimated billed: ~{billed} min/run   "
         "GitHub rounds each job up to a whole minute",
         "",

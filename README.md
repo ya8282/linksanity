@@ -35,6 +35,7 @@ linksanity is modular — install only what you need for your use case.
 
 | Use case | Install | Minimal example | Details |
 |---|---|---|---|
+| **Setup wizard** | `pip install linksanity` | `linksanity init` | [Setup: `linksanity init`](#setup-linksanity-init) |
 | **Scanner only** | `pip install linksanity` | `linksanity scan ./docs/` | [Quick start](#quick-start) |
 | **Fixer** | already included | `linksanity fix ./docs/` (dry run; add `--write` to apply) | [Fixing broken links](#fixing-broken-links) |
 | **Browser crawl** | `pip install "linksanity[browser]"` then `playwright install chromium` | `linksanity crawl https://docs.example.com` | [Crawl a live site](#crawl-a-live-site) |
@@ -79,6 +80,101 @@ pip install -e ".[dev,browser]"
 playwright install chromium
 ```
 
+## Setup: `linksanity init`
+
+The recommended way to add link checking to a repo is the setup wizard. It ships in the wheel, so no cloning is required:
+
+```bash
+pip install linksanity
+linksanity init
+```
+
+`init` detects likely documentation directories, shows a table so you can confirm or edit the selection, runs a timed scan so you can see roughly what it will cost in CI, and writes `.github/workflows/linkcheck.yml` for you (plus, if the scan finds pre-existing breakage, an offered baseline file).
+
+**`init` never runs git.** It only writes files, then prints the `git add`/`git commit` commands so you can review before committing:
+
+```
+Wrote .github/workflows/linkcheck.yml
+Wrote .linksanity-baseline.json  (12 known-broken links)
+
+  git add .github/workflows/linkcheck.yml .linksanity-baseline.json
+  git commit -m "Add linksanity link checking"
+```
+
+The generated workflow runs the [ya8282/linksanity-action](https://github.com/ya8282/linksanity-action) on every pull request:
+
+```yaml
+name: Link check
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  linkcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ya8282/linksanity-action@v1
+        with:
+          paths: docs/ README.md
+          baseline: .linksanity-baseline.json
+```
+
+The `baseline:` line only appears if a baseline was written.
+
+### Non-interactive / agent use
+
+`--yes` skips every prompt, but requires `--paths`, since a non-interactive run has to state what to scan:
+
+```bash
+linksanity init --yes --paths docs/
+```
+
+### Baselines
+
+A baseline is just the scan's JSON results file, the same file `--format json --output` produces. When the measuring scan finds pre-existing breakage (any result with status `broken`, `error`, or `too_many_redirects`), `init` offers to write one. Accepting means CI starts green against the docs you already have and fails only on links that break *after* adoption, instead of going red on day one against rot nobody asked to fix, which is the usual reason a freshly-added link checker gets deleted within a month.
+
+Interactively you're asked before a baseline is written. Under `--yes`, a baseline is written by default whenever breakage is found; pass `--no-baseline` to opt out:
+
+```bash
+linksanity init --yes --paths docs/ --no-baseline
+```
+
+To refresh a stale baseline, re-run `init` interactively rather than pointing `--baseline` at a CI results artifact. With `--baseline` set, `scan` writes `--output` *after* filtering out already-known breakage, so the artifact is already shrunken and not a valid baseline.
+
+### The cost estimate
+
+`init` reports two numbers separately rather than collapsing them into one confident figure: the scan time it just measured locally, and a modelled CI overhead (checkout, `setup-python`, pip install) added on top before rounding up to a billed minute. Treat it as an estimate, not a promise: your local run has a different egress IP, warmer DNS, and a different CPU than the GitHub Actions runner, so local wall time is a biased proxy for runner wall time. Illustrative sample output:
+
+```
+Measured locally:  1m 52s   (318 unique URLs, 87 domains)
+CI overhead:      ~40s      (checkout, setup-python, pip install)
+Estimated billed: ~3 min/run   GitHub rounds each job up to a whole minute
+
+Public repo:  free
+Private repo: ~3 min/run, so ~90 min/mo at 30 runs/mo (illustrative)
+              against the 2,000 min/mo free allowance
+```
+
+The `~40s` overhead figure is illustrative, not a guarantee: it comes from a fixed constant `init` adds to your measured time, not from a live check of your repo's CI run.
+
+### Other flags
+
+| Flag | Effect |
+|---|---|
+| `--paths <dir>` | Scan these paths instead of running detection; required together with `--yes`. Repeat the flag per path (`--paths docs/ --paths README.md`). It is not space-separated like the `paths:` line in the generated workflow |
+| `--no-baseline` | Skip baseline generation even if breakage is found |
+| `--no-measure` | Skip the timed scan entirely: no estimate, no baseline offer (for offline/air-gapped use) |
+| `--workflow-name <name>` | Filename for the generated workflow: a bare filename only, no path separators (default `linkcheck.yml`) |
+| `--dry-run` | Print the generated workflow (and a one-line baseline summary) to stdout; write nothing. Still runs the real measuring scan first unless combined with `--no-measure` |
+
+Run `linksanity init --help` for the full list.
+
+A few behaviors worth knowing before you script around `init`:
+
+- **`--dry-run` alone still hits the network.** It skips the *writes*, not the scan. Combine with `--no-measure` for a fully offline dry run.
+- **Non-interactive without `--yes` fails fast.** If stdin isn't a TTY (e.g. piped, or in CI) and `--yes` is missing, `init` exits `2` rather than hanging on a prompt, and tells you to rerun with `--yes --paths <dir>`.
+- **An existing target file is an error under `--yes`, a prompt without it.** If the workflow file (or baseline file) already exists, `--yes` refuses and exits `2`; interactively you're asked whether to overwrite.
+
 ## Quick start
 
 ### Scan local source files
@@ -119,7 +215,9 @@ linksanity crawl https://docs.example.com --ignore-domains ignore.txt
 
 ### CI integration
 
-The fastest way to add link checking to CI is the [ya8282/linksanity-action](https://github.com/ya8282/linksanity-action) composite action — one line beyond checkout:
+The recommended way to wire this up is `linksanity init` (see [Setup: `linksanity init`](#setup-linksanity-init) above), which writes the workflow below for you after detecting and confirming paths. This section documents the underlying pieces for hand-editing an existing workflow or writing one from scratch.
+
+Link checking in CI runs on the [ya8282/linksanity-action](https://github.com/ya8282/linksanity-action) composite action — one line beyond checkout:
 
 ```yaml
 # .github/workflows/linkcheck.yml
@@ -230,7 +328,7 @@ permissions:
             --output crawl-results.json
 ```
 
-**Generate this workflow automatically** — `scripts/bootstrap_linkcheck.py` writes a full `.github/workflows/linkcheck.yml` (the crawl variant above) into any target repo, prompting for anything not passed as a flag:
+**Maintainer/advanced: generating the crawl-variant workflow** — `scripts/bootstrap_linkcheck.py` writes the *crawl* variant of this workflow (shown above) into a target repo. It is a maintainer tool that lives in this repo's `scripts/` directory, not in the published wheel, so it requires cloning the repo to run. `linksanity init` (see [Setup: `linksanity init`](#setup-linksanity-init) above) is the supported way to set up link checking and does not need a clone, but it only generates the `scan`-based workflow, not this crawl variant. Reach for `bootstrap_linkcheck.py` specifically when you want the crawl variant generated for you:
 
 ```bash
 # Fully interactive — prompts for URL, schedule, max-pages, etc.
@@ -564,8 +662,10 @@ Read results.json and summarise which links are broken and why they might have r
 
 ### Which flag works with which subcommand
 
-The three subcommands share most flags but not all of them. Passing a flag to a
-subcommand that doesn't define it exits `2` with `No such option`.
+The four subcommands share most flags but not all of them. Passing a flag to a
+subcommand that doesn't define it exits `2` with `No such option`. `init` has
+its own flag set (see [Setup: `linksanity init`](#setup-linksanity-init) above)
+and isn't part of the shared `scan`/`fix`/`crawl` matrix below.
 
 | Flag | `scan` | `fix` | `crawl` |
 |---|:--:|:--:|:--:|
@@ -663,6 +763,21 @@ group, plus:
 | `--block-analytics` | off | Block analytics/tracking domains in the browser |
 | `--check-anchors` | off | Validate `#fragment` links against the crawled target page's element ids |
 
+### `linksanity init`
+
+Does not share flags with `scan`/`fix`/`crawl`. See
+[Setup: `linksanity init`](#setup-linksanity-init) above for the full
+walkthrough.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--yes` | off | Run non-interactively; requires `--paths` |
+| `--paths <dir>` | — | Paths to scan for the workflow's `paths:` input; skips detection. Repeat per path |
+| `--no-baseline` | off | Skip baseline generation even if breakage is found |
+| `--no-measure` | off | Skip the timed scan entirely: no estimate, no baseline offer |
+| `--workflow-name <name>` | `linkcheck.yml` | Filename for the generated workflow: a bare name, no path separators |
+| `--dry-run` | off | Print the generated files; write nothing |
+
 ## Configuration file
 
 `scan`, `fix`, and `crawl` discover `linksanity.toml` by walking upward from the current working directory toward the filesystem root, using the nearest one found. The walk stops at (and still checks) the first directory containing a `.git` entry, treating it as the project boundary — a stray `linksanity.toml` in an unrelated ancestor directory (e.g. your home directory) can't leak into the project you're scanning. Pass `--config path/to/linksanity.toml` to use a specific file instead; an explicit `--config` path that doesn't exist is an error, not a silent fallback to defaults.
@@ -726,6 +841,13 @@ For `fix`:
 | `0` | Nothing to fix |
 | `1` | Proposals exist (dry run), or were applied (`--write`) |
 | `2` | Invocation error, or `--write` refused a dirty working tree |
+
+For `init`:
+
+| Code | Meaning |
+|---|---|
+| `0` | Success, or a clean `--dry-run` |
+| `2` | Any refusal or error (bad arguments, non-TTY stdin without `--yes`, an existing target file, a failed scan or write) |
 
 ## Development
 

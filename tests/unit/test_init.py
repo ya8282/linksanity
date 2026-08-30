@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
+import pytest
 import yaml
+from typer.testing import CliRunner
 
 from linksanity._meta import VERSION
+from linksanity.cli import app
 from linksanity.init import (
     DetectionResult,
     Proposal,
@@ -18,6 +23,9 @@ from linksanity.init import (
     render_estimate,
     render_workflow,
 )
+from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
+
+runner = CliRunner()
 
 
 def _write(path: Path, content: str = "x") -> None:
@@ -308,3 +316,365 @@ def test_render_workflow_round_trips_through_yaml_safe_load() -> None:
     with_block = steps[1]["with"]
     assert with_block["paths"] == "docs/ README.md"
     assert with_block["baseline"] == ".linksanity-baseline.json"
+
+
+# --- `linksanity init` CLI --------------------------------------------------
+#
+# `typer.testing.CliRunner` always replaces stdin with a non-terminal stream,
+# even when `input=` is given -- so every test that needs to walk through an
+# interactive prompt monkeypatches `linksanity.cli._stdin_is_tty` to `True`.
+# The one test that exercises the real "no TTY" gate deliberately leaves it
+# alone. `linksanity.cli.run_scan` is always stubbed: no test may hit the
+# network or run a real scan.
+
+_WORKFLOW_PATH = Path(".github/workflows/linkcheck.yml")
+_BASELINE_PATH = Path(".linksanity-baseline.json")
+
+
+class _FakeScan:
+    """Stand-in for `linksanity.cli.run_scan`: async, no network, no filesystem walk."""
+
+    def __init__(
+        self, results: list[LinkResult], corpus_files: list[Path] | None = None
+    ) -> None:
+        self._results = results
+        self._corpus_files = corpus_files or []
+
+    async def __call__(self, patterns: list[str], config: object) -> LinkQueue:
+        queue = LinkQueue()
+        queue.corpus_files = list(self._corpus_files)
+        for result in self._results:
+            queue.record(result)
+        return queue
+
+
+def _fail_if_called(*_args: object, **_kwargs: object) -> None:
+    raise AssertionError("run_scan must not be called")
+
+
+class _FailingScan:
+    """Stand-in for `linksanity.cli.run_scan` that raises, simulating a scan
+    failure (e.g. a network error) to verify it still surfaces as exit 2
+    now that `_timed_scan` drives `run_scan` via `asyncio.create_task`
+    instead of a background thread."""
+
+    async def __call__(self, patterns: list[str], config: object) -> LinkQueue:
+        raise RuntimeError("boom")
+
+
+def _ok_result(url: str = "https://example.com/") -> LinkResult:
+    return LinkResult(
+        source_file="docs/a.md",
+        line=1,
+        url=url,
+        link_type=LinkType.EXTERNAL,
+        status=LinkStatus.OK,
+    )
+
+
+def _broken_result(url: str = "https://example.com/dead") -> LinkResult:
+    return LinkResult(
+        source_file="docs/a.md",
+        line=2,
+        url=url,
+        link_type=LinkType.EXTERNAL,
+        status=LinkStatus.BROKEN,
+    )
+
+
+def _too_many_redirects_result(url: str = "https://example.com/loop") -> LinkResult:
+    return LinkResult(
+        source_file="docs/a.md",
+        line=3,
+        url=url,
+        link_type=LinkType.EXTERNAL,
+        status=LinkStatus.TOO_MANY_REDIRECTS,
+    )
+
+
+def test_init_cli_overwrite_workflow_interactive_prompts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_ok_result()]))
+    _WORKFLOW_PATH.parent.mkdir(parents=True)
+    _WORKFLOW_PATH.write_text("OLD CONTENT\n")
+
+    result = runner.invoke(app, ["init", "--paths", "docs/"], input="y\n")
+
+    assert result.exit_code == 0, result.output
+    assert "already exists" in result.output
+    new_content = _WORKFLOW_PATH.read_text()
+    assert new_content != "OLD CONTENT\n"
+    assert "Link check" in new_content
+
+
+def test_init_cli_overwrite_workflow_under_yes_errors_and_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+    _WORKFLOW_PATH.parent.mkdir(parents=True)
+    _WORKFLOW_PATH.write_text("OLD CONTENT\n")
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", "docs/"])
+
+    assert result.exit_code == 2
+    # Not just "it exited nonzero" -- the file on disk must be byte-identical
+    # to what was there before the refused run.
+    assert _WORKFLOW_PATH.read_text() == "OLD CONTENT\n"
+
+
+def test_init_cli_overwrite_baseline_interactive_prompts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_broken_result()]))
+    _BASELINE_PATH.write_text("OLD BASELINE\n")
+
+    # First "y" accepts the baseline offer, second "y" confirms overwriting
+    # the existing baseline file.
+    result = runner.invoke(app, ["init", "--paths", "docs/"], input="y\ny\n")
+
+    assert result.exit_code == 0, result.output
+    assert "already exists" in result.output
+    new_content = _BASELINE_PATH.read_text()
+    assert new_content != "OLD BASELINE\n"
+    assert "docs/a.md" in new_content
+
+
+def test_init_cli_overwrite_baseline_under_yes_is_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_broken_result()]))
+    _BASELINE_PATH.write_text("OLD BASELINE\n")
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", "docs/"])
+
+    assert result.exit_code == 2
+    assert _BASELINE_PATH.read_text() == "OLD BASELINE\n"
+    assert not _WORKFLOW_PATH.exists()
+
+
+def test_init_cli_yes_writes_baseline_by_default_when_breakage_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_broken_result()]))
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", "docs/"])
+
+    assert result.exit_code == 0, result.output
+    assert _BASELINE_PATH.exists()
+    assert "baseline: .linksanity-baseline.json" in _WORKFLOW_PATH.read_text()
+
+
+def test_init_cli_yes_no_baseline_skips_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_broken_result()]))
+
+    result = runner.invoke(
+        app, ["init", "--yes", "--paths", "docs/", "--no-baseline"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert not _BASELINE_PATH.exists()
+    assert "baseline:" not in _WORKFLOW_PATH.read_text()
+
+
+def test_init_cli_redirect_only_breakage_triggers_baseline_offer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The baseline offer must fire on `too_many_redirects` alone, not just
+    on `broken`/`error` -- see queue.FAILING_STATUSES."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "linksanity.cli.run_scan", _FakeScan([_too_many_redirects_result()])
+    )
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", "docs/"])
+
+    assert result.exit_code == 0, result.output
+    assert _BASELINE_PATH.exists()
+
+
+def test_init_cli_competing_checker_warns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_ok_result()]))
+    workflows_dir = Path(".github/workflows")
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "lychee.yml").write_text(
+        "jobs:\n  check:\n    steps:\n      - uses: lycheeverse/lychee-action@v1\n"
+    )
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", "docs/"])
+
+    assert result.exit_code == 0, result.output
+    assert "lychee" in result.stderr
+    assert "warning" in result.stderr.lower()
+
+
+def test_init_cli_dry_run_writes_nothing_prints_workflow_full_baseline_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_broken_result()]))
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", "docs/", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert not _WORKFLOW_PATH.exists()
+    assert not _BASELINE_PATH.exists()
+    # The workflow is printed in full...
+    assert "name: Link check" in result.output
+    assert "paths: docs/" in result.output
+    assert "baseline: .linksanity-baseline.json" in result.output
+    # ...but the baseline is only a one-line count-and-path summary, never
+    # the JSON results body.
+    assert "docs/a.md" not in result.output
+    assert "https://example.com/dead" not in result.output
+    assert "1 known-broken link" in result.output
+    assert str(_BASELINE_PATH) in result.output
+
+
+def test_init_cli_no_measure_skips_scan_estimate_and_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+
+    result = runner.invoke(
+        app, ["init", "--yes", "--paths", "docs/", "--no-measure"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Measured locally" not in result.output
+    assert "Estimated billed" not in result.output
+    assert not _BASELINE_PATH.exists()
+    assert _WORKFLOW_PATH.exists()
+    assert "baseline:" not in _WORKFLOW_PATH.read_text()
+
+
+@pytest.mark.parametrize("bad_name", ["../x.yml", "a/b.yml"])
+def test_init_cli_workflow_name_rejects_path_separators(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad_name: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+
+    result = runner.invoke(
+        app, ["init", "--yes", "--paths", "docs/", "--workflow-name", bad_name]
+    )
+
+    assert result.exit_code == 2
+    assert "--workflow-name" in result.stderr
+    assert not Path(".github").exists()
+
+
+def test_init_cli_workflow_name_accepts_bare_yaml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_ok_result()]))
+
+    result = runner.invoke(
+        app, ["init", "--yes", "--paths", "docs/", "--workflow-name", "check.yaml"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert Path(".github/workflows/check.yaml").exists()
+
+
+def test_init_cli_no_tty_without_yes_exits_2_with_guidance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+    # _stdin_is_tty is deliberately left unpatched: CliRunner's stdin is
+    # never a real terminal, which is exactly the condition under test.
+
+    result = runner.invoke(app, ["init"])
+
+    assert result.exit_code == 2
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "--yes" in result.stderr
+    assert "--paths" in result.stderr
+    assert not Path(".github").exists()
+
+
+def test_init_cli_scan_failure_exits_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scan failure (e.g. a raised exception from `run_scan`) must still
+    surface as a clean exit 2, not an unhandled exception -- this exercises
+    exception propagation through `_timed_scan`'s `asyncio.create_task` +
+    `await task`, after the thread-based version was replaced."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FailingScan())
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", "docs/"])
+
+    assert result.exit_code == 2
+    assert "measuring scan failed" in result.stderr
+    assert "boom" in result.stderr
+    assert not _WORKFLOW_PATH.exists()
+
+
+def test_stdin_is_tty_returns_false_when_stdin_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`sys.stdin` is `None` when a process is launched with stdin closed
+    (e.g. `python -m linksanity init 0<&-`). `_stdin_is_tty` must treat that
+    as "not a tty" instead of raising `AttributeError`."""
+    from linksanity.cli import _stdin_is_tty
+
+    monkeypatch.setattr(sys, "stdin", None)
+
+    assert _stdin_is_tty() is False
+
+
+def test_init_cli_closed_stdin_exits_2_out_of_process(tmp_path: Path) -> None:
+    """Out-of-process proof for the closed-stdin fix: a real subprocess with
+    fd 0 closed (mirroring `python -m linksanity init 0<&-`) must exit 2 with
+    a clean message, not crash with a traceback. This deliberately does not
+    go through the `_stdin_is_tty` monkeypatch seam used by the rest of this
+    file -- that seam is exactly what hid the original bug."""
+    result = subprocess.run(
+        f"{sys.executable} -m linksanity init 0<&-",
+        shell=True,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2, result.stderr
+    assert "--yes" in result.stderr
+    assert "--paths" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_init_cli_malformed_config_exits_2_no_traceback(tmp_path: Path) -> None:
+    """A syntactically invalid `linksanity.toml` must exit 2 with a clean
+    message, matching every other command's ConfigError handling -- not
+    exit 1 with a raw traceback."""
+    (tmp_path / "linksanity.toml").write_text("this is [not valid toml\n")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "a.md").write_text("x\n")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "linksanity", "init", "--yes", "--paths", "docs/"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2, result.stderr
+    assert "Traceback" not in result.stderr
+    assert not (tmp_path / ".github").exists()

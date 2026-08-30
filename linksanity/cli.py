@@ -6,10 +6,15 @@ import asyncio
 import json
 import os
 import re
+import sys
+import time
 from enum import Enum
 from pathlib import Path
+from urllib.parse import urlparse
 
 import typer
+from rich.console import Console
+from rich.table import Table
 
 from linksanity.config import Config, ConfigError, load_config
 from linksanity.fixer import (
@@ -20,7 +25,20 @@ from linksanity.fixer import (
     build_wayback_proposals,
     render_diff,
 )
-from linksanity.queue import FAILING_STATUSES, LinkResult
+from linksanity.init import (
+    _DENYLIST,
+    _SUFFIXES,
+    DetectionResult,
+    Proposal,
+    _is_safe_name,
+    _refusal_reason,
+    count_divergence_warning,
+    detect_paths,
+    measuring_config,
+    render_estimate,
+    render_workflow,
+)
+from linksanity.queue import FAILING_STATUSES, LinkQueue, LinkResult
 from linksanity.reporters import report
 from linksanity.scanner import run_scan
 
@@ -160,6 +178,20 @@ def _load_config_or_exit(config_path: Path | None, **overrides: object) -> Confi
     """
     try:
         return load_config(config_path, **overrides)
+    except ConfigError as exc:
+        typer.echo(f"[linksanity] {exc}", err=True)
+        raise typer.Exit(2) from exc
+
+
+def _measuring_config_or_exit(config_path: Path | None) -> Config:
+    """Build `init`'s measuring config, turning a malformed `linksanity.toml`
+    into the same clean exit-2 as every other command instead of letting
+    `measuring_config`'s underlying `load_config` raise `ConfigError`
+    uncaught. Mirrors `_load_config_or_exit` rather than adding a second
+    error-handling convention for `init` alone.
+    """
+    try:
+        return measuring_config(config_path)
     except ConfigError as exc:
         typer.echo(f"[linksanity] {exc}", err=True)
         raise typer.Exit(2) from exc
@@ -746,3 +778,349 @@ def crawl(
     summary = queue.summary()
     broken = sum(summary.get(s.value, 0) for s in FAILING_STATUSES)
     raise typer.Exit(1 if broken else 0)
+
+
+# ── init ─────────────────────────────────────────────────────────────────────
+
+_WORKFLOW_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+\.ya?ml$")
+_COMPETING_CHECKERS = ("lychee", "markdown-link-check", "linkinator")
+
+
+def _stdin_is_tty() -> bool:
+    """Whether stdin is a real terminal.
+
+    A thin, separately-named wrapper around `sys.stdin.isatty()` so tests can
+    monkeypatch `linksanity.cli._stdin_is_tty` to simulate an interactive
+    terminal — `typer.testing.CliRunner` always replaces stdin with a
+    non-terminal stream, so without this seam none of the interactive prompt
+    flows could be exercised in tests.
+
+    A closed stdin (e.g. `python -m linksanity init 0<&-`) makes `sys.stdin`
+    `None`, and some non-terminal stream objects raise (rather than return
+    `False`) from `isatty()`. Both are treated as "not a tty" so the caller
+    falls into the existing exit-2-with-guidance branch instead of dying on
+    an uncaught `AttributeError`/`ValueError`.
+    """
+    stdin = sys.stdin
+    if stdin is None:
+        return False
+    try:
+        return stdin.isatty()
+    except (AttributeError, ValueError, OSError):
+        return False
+
+
+def _validate_workflow_name(name: str) -> None:
+    """Reject anything that is not a bare `*.yml`/`*.yaml` filename.
+
+    Path separators are rejected here (the regex has none in its character
+    class) so the generated file can never escape `.github/workflows/`.
+    """
+    if not _WORKFLOW_NAME_RE.match(name):
+        typer.echo(
+            "[linksanity] --workflow-name must be a bare filename matching "
+            f"[A-Za-z0-9._-]+.ya?ml, with no path separators (got {name!r})",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+
+def _validate_path_values(values: list[str]) -> None:
+    """Refuse any --paths value that action.yml's unquoted word-split can't represent.
+
+    Reuses init.py's own `_is_safe_name`/`_refusal_reason` rather than
+    retyping the `[A-Za-z0-9._/-]+` rule a second time.
+    """
+    for value in values:
+        bare = value.rstrip("/")
+        if not _is_safe_name(bare):
+            typer.echo(
+                f"[linksanity] cannot use --paths {value!r}: {_refusal_reason(bare)}",
+                err=True,
+            )
+            raise typer.Exit(2)
+
+
+def _detect_competing_checkers(root: Path) -> list[str]:
+    """Return the names of any competing link checkers configured in .github/workflows/."""
+    workflows_dir = root / ".github" / "workflows"
+    if not workflows_dir.is_dir():
+        return []
+    found: set[str] = set()
+    for pattern in ("*.yml", "*.yaml"):
+        for wf in workflows_dir.glob(pattern):
+            try:
+                text = wf.read_text(encoding="utf-8").lower()
+            except OSError:
+                continue
+            for tool in _COMPETING_CHECKERS:
+                if tool in text:
+                    found.add(tool)
+    return sorted(found)
+
+
+def _print_detection_notes(console: Console, detection: DetectionResult) -> None:
+    """Surface refused candidates and the HTML-fallback note, so nothing is silently dropped."""
+    if detection.refused:
+        console.print("[yellow]Excluded (cannot be represented in a paths: value):[/yellow]")
+        for r in detection.refused:
+            console.print(f"  {r.path} — {r.reason}")
+    if detection.used_html_fallback:
+        console.print(
+            "[dim]No Markdown/RST/AsciiDoc/MDX docs found; proposing HTML-only "
+            "documentation directories instead.[/dim]"
+        )
+
+
+def _select_paths(console: Console, proposals: list[Proposal]) -> list[str]:
+    """Show the detected proposals in a table, preselected, and let the user edit the selection."""
+    table = Table(title="Detected documentation paths")
+    table.add_column("#", justify="right")
+    table.add_column("Path")
+    table.add_column("Files", justify="right")
+    for i, p in enumerate(proposals, start=1):
+        table.add_row(str(i), p.path, str(p.file_count))
+    console.print(table)
+
+    default_selection = ",".join(str(i) for i in range(1, len(proposals) + 1))
+    answer = typer.prompt(
+        "Paths to include (comma-separated numbers, or 'none' to select nothing)",
+        default=default_selection,
+    )
+    if answer.strip().lower() == "none":
+        return []
+
+    indices: list[int] = []
+    for token in answer.split(","):
+        token = token.strip()
+        if token.isdigit() and 1 <= int(token) <= len(proposals):
+            indices.append(int(token))
+    return [proposals[i - 1].path for i in dict.fromkeys(indices)]
+
+
+def _prompt_manual_path(console: Console) -> str | None:
+    """Ask for a path to scan when detection found nothing. Returns None on decline."""
+    console.print(
+        "No documentation directories detected. Searched for "
+        f"{', '.join(_SUFFIXES)} files, pruning dot-directories and "
+        f"{', '.join(sorted(_DENYLIST))} (case-insensitive)."
+    )
+    answer = typer.prompt("Path to scan (leave blank to cancel)", default="")
+    answer = answer.strip()
+    return answer or None
+
+
+async def _timed_scan(patterns: list[str], config: Config) -> tuple[LinkQueue, float]:
+    """Run `run_scan()` behind a rich.status spinner showing elapsed time.
+
+    `run_scan` is already async, so it is driven with a plain
+    `asyncio.create_task` + polling loop rather than a background thread.
+    That is the whole point: if the process receives Ctrl-C while this
+    coroutine is running, `asyncio.run()` (in the caller) cancels this
+    coroutine's still-pending task on shutdown, and cancellation propagates
+    into `run_scan`, letting it close its aiohttp/httpx session cleanly. A
+    background thread running its own `asyncio.run()` cannot be cancelled
+    like that -- it would keep the session open past the interrupted
+    process, which is exactly the failure mode this rewrite removes.
+    """
+    console = Console()
+    start = time.monotonic()
+    task = asyncio.create_task(run_scan(patterns, config))
+    with console.status("Measuring...") as status:
+        while not task.done():
+            await asyncio.wait([task], timeout=0.2)
+            status.update(f"Measuring... {int(time.monotonic() - start)}s")
+    elapsed = time.monotonic() - start
+
+    return await task, elapsed
+
+
+@app.command(name="init")
+def init_cmd(
+    yes: bool = typer.Option(
+        False, "--yes", help="Run non-interactively; requires --paths"
+    ),
+    paths: list[str] | None = typer.Option(  # noqa: B008
+        None, "--paths", help="Paths to scan for `paths:` (skips detection)"
+    ),
+    no_baseline: bool = typer.Option(
+        False, "--no-baseline", help="Skip baseline generation even if breakage is found"
+    ),
+    no_measure: bool = typer.Option(
+        False,
+        "--no-measure",
+        help="Skip the timed scan entirely: no estimate, no baseline (offline/air-gapped use)",
+    ),
+    workflow_name: str = typer.Option(
+        "linkcheck.yml",
+        "--workflow-name",
+        help="Filename for the generated workflow: a bare name, no path separators",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print the generated files; write nothing"
+    ),
+) -> None:
+    """Detect documentation paths, measure a link check, and write a CI workflow."""
+    console = Console()
+
+    _validate_workflow_name(workflow_name)
+
+    if yes and not paths:
+        typer.echo(
+            "[linksanity] --yes requires --paths (a non-interactive run must state "
+            "what to scan)",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    if not yes and not _stdin_is_tty():
+        typer.echo(
+            "[linksanity] stdin is not a TTY, so interactive prompts would hang; "
+            "rerun with --yes --paths <dir> for a non-interactive run",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    root = Path.cwd()
+    detection: DetectionResult | None = None
+
+    if paths:
+        _validate_path_values(paths)
+        selected = list(paths)
+    else:
+        detection = detect_paths(root)
+        _print_detection_notes(console, detection)
+        if not detection.proposals:
+            manual = _prompt_manual_path(console)
+            if manual is None:
+                typer.echo("[linksanity] no path given; nothing to scan", err=True)
+                raise typer.Exit(2)
+            _validate_path_values([manual])
+            selected = [manual]
+        else:
+            selected = _select_paths(console, detection.proposals)
+            if not selected:
+                typer.echo("[linksanity] no paths selected; nothing to scan", err=True)
+                raise typer.Exit(2)
+
+    competing = _detect_competing_checkers(root)
+    if competing:
+        names = ", ".join(competing)
+        if yes:
+            typer.echo(
+                f"[linksanity] warning: competing link checker(s) already configured: "
+                f"{names}",
+                err=True,
+            )
+        elif not typer.confirm(
+            f"Found competing link checker(s) already configured in .github/workflows/: "
+            f"{names}. Continue anyway?",
+            default=False,
+        ):
+            raise typer.Exit(2)
+
+    workflow_path = Path(".github") / "workflows" / workflow_name
+    if workflow_path.exists():
+        if yes:
+            typer.echo(
+                f"[linksanity] {workflow_path} already exists; refusing to overwrite "
+                "under --yes",
+                err=True,
+            )
+            raise typer.Exit(2)
+        if not typer.confirm(f"{workflow_path} already exists. Overwrite it?", default=False):
+            raise typer.Exit(2)
+
+    results: list[LinkResult] = []
+    breakage = False
+
+    if no_measure:
+        typer.echo("[linksanity] --no-measure: skipping the scan, estimate, and baseline")
+    else:
+        config_path = _resolve_config_path(None)
+        config = _measuring_config_or_exit(config_path)
+        try:
+            queue, elapsed = asyncio.run(_timed_scan(selected, config))
+        except Exception as exc:
+            typer.echo(f"[linksanity] measuring scan failed: {exc}", err=True)
+            raise typer.Exit(2) from exc
+
+        results = queue.results()
+        unique_urls = len(results)
+        unique_domains = len({urlparse(r.url).netloc for r in results if r.url})
+        for line in render_estimate(elapsed, unique_urls, unique_domains):
+            typer.echo(line)
+
+        if detection is not None:
+            detected_total = sum(
+                p.file_count for p in detection.proposals if p.path in selected
+            )
+            warning = count_divergence_warning(detected_total, len(queue.corpus_files))
+            if warning:
+                typer.echo("")
+                typer.echo(f"[linksanity] {warning}", err=True)
+
+        breakage = any(r.status in FAILING_STATUSES for r in results)
+
+    write_baseline = False
+    if breakage and not no_baseline:
+        broken_count = sum(1 for r in results if r.status in FAILING_STATUSES)
+        if yes:
+            write_baseline = True
+        else:
+            write_baseline = typer.confirm(
+                f"The measuring scan found {broken_count} pre-existing broken link(s). "
+                "Write a baseline so CI only fails on new breakage?",
+                default=True,
+            )
+
+    baseline_path = Path(".linksanity-baseline.json")
+    if write_baseline and baseline_path.exists():
+        if yes:
+            typer.echo(
+                f"[linksanity] {baseline_path} already exists; refusing to overwrite "
+                "under --yes",
+                err=True,
+            )
+            raise typer.Exit(2)
+        if not typer.confirm(f"{baseline_path} already exists. Overwrite it?", default=False):
+            write_baseline = False
+
+    workflow_text = render_workflow(
+        selected, baseline_path=str(baseline_path) if write_baseline else None
+    )
+
+    if dry_run:
+        typer.echo(workflow_text, nl=False)
+        if write_baseline:
+            broken_count = sum(1 for r in results if r.status in FAILING_STATUSES)
+            typer.echo(f"Baseline: {broken_count} known-broken link(s) -> {baseline_path}")
+        raise typer.Exit(0)
+
+    try:
+        workflow_path.parent.mkdir(parents=True, exist_ok=True)
+        workflow_path.write_text(workflow_text, encoding="utf-8")
+    except OSError as exc:
+        typer.echo(f"[linksanity] cannot write {workflow_path}: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"Wrote {workflow_path}")
+
+    targets = [str(workflow_path)]
+    if write_baseline:
+        from linksanity.reporters.json_reporter import report as _json_report  # noqa: I001
+
+        try:
+            with open(baseline_path, "w", encoding="utf-8") as fh:
+                _json_report(results, file=fh)
+        except OSError as exc:
+            typer.echo(f"[linksanity] cannot write {baseline_path}: {exc}", err=True)
+            raise typer.Exit(2) from exc
+        broken_count = sum(1 for r in results if r.status in FAILING_STATUSES)
+        typer.echo(f"Wrote {baseline_path}  ({broken_count} known-broken links)")
+        targets.append(str(baseline_path))
+
+    typer.echo("")
+    typer.echo("  git add " + " ".join(targets))
+    typer.echo('  git commit -m "Add linksanity link checking"')
+
+    raise typer.Exit(0)

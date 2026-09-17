@@ -1020,7 +1020,7 @@ def init_cmd(
             raise typer.Exit(2)
 
     workflow_path = Path(".github") / "workflows" / workflow_name
-    if workflow_path.exists():
+    if workflow_path.exists() and not dry_run:
         if yes:
             typer.echo(
                 f"[linksanity] {workflow_path} already exists; refusing to overwrite "
@@ -1075,7 +1075,7 @@ def init_cmd(
             )
 
     baseline_path = Path(".linksanity-baseline.json")
-    if write_baseline and baseline_path.exists():
+    if write_baseline and baseline_path.exists() and not dry_run:
         if yes:
             typer.echo(
                 f"[linksanity] {baseline_path} already exists; refusing to overwrite "
@@ -1091,6 +1091,18 @@ def init_cmd(
     )
 
     if dry_run:
+        if workflow_path.exists():
+            typer.echo(
+                f"[linksanity] note: {workflow_path} already exists; a real run would "
+                "refuse (exit 2)",
+                err=True,
+            )
+        if write_baseline and baseline_path.exists():
+            typer.echo(
+                f"[linksanity] note: {baseline_path} already exists; a real run would "
+                "refuse (exit 2)",
+                err=True,
+            )
         typer.echo(workflow_text, nl=False)
         if write_baseline:
             broken_count = sum(1 for r in results if r.status in FAILING_STATUSES)

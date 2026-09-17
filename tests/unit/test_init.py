@@ -544,6 +544,61 @@ def test_init_cli_dry_run_writes_nothing_prints_workflow_full_baseline_summary(
     assert str(_BASELINE_PATH) in result.output
 
 
+def test_init_cli_dry_run_with_existing_workflow_notes_and_exits_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_ok_result()]))
+    _WORKFLOW_PATH.parent.mkdir(parents=True)
+    _WORKFLOW_PATH.write_text("OLD CONTENT\n")
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", "docs/", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert _WORKFLOW_PATH.read_text() == "OLD CONTENT\n"
+    assert str(_WORKFLOW_PATH) in result.output
+    assert "a real run would refuse" in result.output
+    assert "name: Link check" in result.output
+
+
+def test_init_cli_yes_dry_run_with_existing_baseline_notes_and_exits_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_broken_result()]))
+    _BASELINE_PATH.write_text("OLD BASELINE\n")
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", "docs/", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert _BASELINE_PATH.read_text() == "OLD BASELINE\n"
+    assert not _WORKFLOW_PATH.exists()
+    assert str(_BASELINE_PATH) in result.output
+    assert "a real run would refuse" in result.output
+
+
+def test_init_cli_interactive_dry_run_with_existing_baseline_does_not_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_broken_result()]))
+    _BASELINE_PATH.write_text("OLD BASELINE\n")
+
+    # Only one "y" is supplied, answering the "write a baseline?" offer. If
+    # the dry-run path prompted again about overwriting the existing
+    # baseline, this would abort on EOF instead of exiting 0.
+    result = runner.invoke(
+        app, ["init", "--paths", "docs/", "--dry-run"], input="y\n"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert _BASELINE_PATH.read_text() == "OLD BASELINE\n"
+    assert "Overwrite it?" not in result.output
+    assert str(_BASELINE_PATH) in result.output
+    assert "a real run would refuse" in result.output
+
+
 def test_init_cli_no_measure_skips_scan_estimate_and_baseline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -748,6 +748,26 @@ def test_init_cli_paths_rejects_leading_slash(
     assert not Path(".github").exists()
 
 
+@pytest.mark.parametrize("bad_path", ["-x", "-!x", "-x?"])
+def test_init_cli_paths_rejects_leading_dash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad_path: str
+) -> None:
+    """A --paths value starting with '-' gets the word-split-into-a-flag
+    message. '-x?' also carries a glob metacharacter ('?'), which pins that
+    the leading-dash check runs before the glob check: if the branches were
+    ever reordered, this would report the glob message instead."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", bad_path])
+
+    assert result.exit_code == 2
+    assert bad_path in result.stderr
+    assert "word-split into a flag" in result.stderr
+    assert "glob" not in result.stderr
+    assert not Path(".github").exists()
+
+
 def test_init_cli_paths_rejects_empty_string(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

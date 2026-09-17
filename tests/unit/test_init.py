@@ -703,7 +703,7 @@ def test_init_cli_workflow_name_accepts_bare_yaml(
     assert Path(".github/workflows/check.yaml").exists()
 
 
-@pytest.mark.parametrize("bad_path", ["../elsewhere", "a/../b", "docs/.."])
+@pytest.mark.parametrize("bad_path", ["../elsewhere", "a/../b", "docs/..", ".."])
 def test_init_cli_paths_rejects_traversal_component(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad_path: str
 ) -> None:
@@ -718,7 +718,7 @@ def test_init_cli_paths_rejects_traversal_component(
     assert not Path(".github").exists()
 
 
-@pytest.mark.parametrize("ok_path", ["docs/", "my-docs..v2"])
+@pytest.mark.parametrize("ok_path", ["docs/", "my-docs..v2", "docs", "a..b"])
 def test_init_cli_paths_accepts_dotted_names_without_traversal_component(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ok_path: str
 ) -> None:
@@ -731,6 +731,21 @@ def test_init_cli_paths_accepts_dotted_names_without_traversal_component(
 
     assert result.exit_code == 0, result.output
     assert _WORKFLOW_PATH.exists()
+
+
+@pytest.mark.parametrize("bad_path", ["/etc", "/etc/"])
+def test_init_cli_paths_rejects_leading_slash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad_path: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", bad_path])
+
+    assert result.exit_code == 2
+    assert bad_path in result.stderr
+    assert "repo-relative" in result.stderr
+    assert not Path(".github").exists()
 
 
 def test_init_cli_no_tty_without_yes_exits_2_with_guidance(

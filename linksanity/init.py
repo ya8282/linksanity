@@ -92,6 +92,7 @@ def _is_safe_name(name: str) -> bool:
     return (
         bool(_SAFE_COMPONENT.match(name))
         and not name.startswith("-")
+        and not name.startswith("/")
         and not _has_traversal_component(name)
     )
 
@@ -140,6 +141,8 @@ def _top_component(rel: Path) -> str | None:
 def _refusal_reason(name: str) -> str:
     if _has_traversal_component(name):
         return "contains a '..' path component; a workflow paths: value must stay inside the checkout"
+    if name.startswith("/"):
+        return "starts with '/', an absolute path; paths: values are repo-relative -- drop the leading slash"
     if name.startswith("-"):
         return "starts with '-', which would word-split into a flag in the unquoted paths: value"
     return "contains a character unsafe for the unquoted paths: word-split (whitespace, #, *, or a quote)"

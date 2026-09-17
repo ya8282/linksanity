@@ -49,7 +49,7 @@ jobs:
 
 | Name | Description |
 | --- | --- |
-| `broken-count` | Number of links with status `broken` or `error` found by the scan. |
+| `broken-count` | Number of links found by the scan with a failing status (`broken`, `error`, or `too_many_redirects` — a redirect loop counts as a failure even though it isn't literally "broken"). |
 | `results-file` | Path to the JSON results file written by the scan. |
 
 ### Full usage
@@ -68,13 +68,11 @@ jobs:
     upload-results: "true"
 ```
 
-### Known defects in the action
+### Behaviour worth knowing about
 
-Two current behaviours of the action are worth knowing about before you rely on it. Neither is fixed yet; both are tracked as open beads.
+**The action pins a version, it does not track latest.** This is intended, documented behaviour, not a defect. The action's `version` input defaults to `0.2.0`, a specific pin, not an empty string. A workflow that uses `ya8282/linksanity-action@v1` without setting `version:` therefore installs `linksanity==0.2.0`, not whatever the newest release on PyPI is. `linksanity init`'s local cost-estimate output names this pinned version, so the estimate and the generated workflow agree. If you want to track the newest release instead, pass `version: ""` explicitly; a CLI change (e.g. a renamed or removed flag) can then break the action without warning. To pin to something other than `0.2.0`, pass an explicit `version: "X.Y.Z"`.
 
-**The action pins a version, it does not track latest (linksanity-4nf).** The action's `version` input defaults to `0.2.0`, a specific pin, not an empty string. A workflow that uses `ya8282/linksanity-action@v1` without setting `version:` therefore installs `linksanity==0.2.0`, not whatever the newest release on PyPI is. `linksanity init`'s local cost-estimate output names this pinned version, so the estimate and the generated workflow agree. If you want to track the newest release instead, pass `version: ""` explicitly; a CLI change (e.g. a renamed or removed flag) can then break the action without warning. To pin to something other than `0.2.0`, pass an explicit `version: "X.Y.Z"`.
-
-**Annotations and the exit code can disagree (linksanity-jx1).** The action's step that emits `::error::` annotations filters scan results to `status == "broken"` or `status == "error"` only. But the job's exit code comes straight from `linksanity scan`, which also fails on `status == "too_many_redirects"` (a redirect loop). A run whose only failures are `too_many_redirects` results therefore fails the job — and the `broken-count` output stays `0` — while producing zero annotations explaining why. The failure is real, but nothing in the diff view or the annotation list points at it; you have to open the uploaded results artifact to see the redirect-loop entries. If your docs are prone to redirect chains, check the uploaded JSON artifact whenever a linkcheck job goes red without a visible annotation.
+**On the currently released `ya8282/linksanity-action@v1`, the action's `::error::` annotations and its exit code can disagree.** A run whose only failures are `too_many_redirects` (a redirect loop) exits nonzero without producing any annotation explaining why, and `broken-count` undercounts by omitting those entries (linksanity-jx1). A fix — aligning the count, the annotations, and the exit code on the same set of failing statuses, and annotating a redirect loop as one — exists but has not yet been released under the `v1` tag; if you need it now, pin the action to a commit SHA off that fix rather than `@v1`. Once `v1` is re-pointed past the fix, this paragraph can be deleted.
 
 ## Option B: install and run the CLI directly
 

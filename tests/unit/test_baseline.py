@@ -27,13 +27,13 @@ def _write_report(path: Path, entries: list[dict[str, object]]) -> None:
 
 
 class TestLoadBaseline:
-    def test_missing_file_returns_empty_set(self, tmp_path: Path) -> None:
-        assert load_baseline(tmp_path / "missing.json") == set()
+    def test_missing_file_returns_empty_dict(self, tmp_path: Path) -> None:
+        assert load_baseline(tmp_path / "missing.json") == {}
 
-    def test_corrupt_file_returns_empty_set(self, tmp_path: Path) -> None:
+    def test_corrupt_file_returns_empty_dict(self, tmp_path: Path) -> None:
         p = tmp_path / "bad.json"
         p.write_text("not json{{{")
-        assert load_baseline(p) == set()
+        assert load_baseline(p) == {}
 
     def test_only_notable_statuses_are_kept(self, tmp_path: Path) -> None:
         p = tmp_path / "report.json"
@@ -42,7 +42,7 @@ class TestLoadBaseline:
             {"source_file": "a.md", "line": 2, "url": "https://broken.com", "status": "broken"},
             {"source_file": "a.md", "line": 3, "url": "mailto:x@y.com", "status": "skipped"},
         ])
-        assert load_baseline(p) == {("a.md", "https://broken.com")}
+        assert load_baseline(p) == {("a.md", "https://broken.com"): LinkStatus.BROKEN}
 
     def test_all_notable_statuses_recognized(self, tmp_path: Path) -> None:
         p = tmp_path / "report.json"
@@ -54,34 +54,85 @@ class TestLoadBaseline:
         ])
         keys = load_baseline(p)
         assert keys == {
-            ("a.md", "https://x1.com"),
-            ("a.md", "https://x2.com"),
-            ("a.md", "https://x3.com"),
-            ("a.md", "https://x4.com"),
+            ("a.md", "https://x1.com"): LinkStatus.BROKEN,
+            ("a.md", "https://x2.com"): LinkStatus.ERROR,
+            ("a.md", "https://x3.com"): LinkStatus.REDIRECT,
+            ("a.md", "https://x4.com"): LinkStatus.TOO_MANY_REDIRECTS,
         }
+
+    def test_status_less_entry_maps_to_none(self, tmp_path: Path) -> None:
+        # A baseline file written before status-aware comparison existed has
+        # no "status" field at all. It must load, not crash.
+        p = tmp_path / "legacy.json"
+        _write_report(p, [
+            {"source_file": "a.md", "line": 1, "url": "https://x1.com"},
+        ])
+        assert load_baseline(p) == {("a.md", "https://x1.com"): None}
 
 
 class TestOnlyNew:
     def test_known_broken_link_is_dropped(self) -> None:
         r = _result()
-        baseline = {(r.source_file, r.url)}
+        baseline = {(r.source_file, r.url): LinkStatus.BROKEN}
         assert only_new([r], baseline) == []
 
     def test_new_broken_link_is_kept(self) -> None:
         r = _result(url="https://new-broken.com")
-        assert only_new([r], set()) == [r]
+        assert only_new([r], {}) == [r]
 
     def test_ok_results_always_kept(self) -> None:
         r = _result(status=LinkStatus.OK, http_code=200)
-        baseline = {(r.source_file, r.url)}
+        baseline = {(r.source_file, r.url): LinkStatus.BROKEN}
         assert only_new([r], baseline) == [r]
 
     def test_line_number_drift_does_not_matter(self) -> None:
-        baseline = {("docs/index.md", "https://example.com/broken")}
+        baseline = {("docs/index.md", "https://example.com/broken"): LinkStatus.BROKEN}
         r = _result(line=99)  # same file+url, different line than baseline recorded
         assert only_new([r], baseline) == []
 
     def test_different_file_same_url_is_new(self) -> None:
-        baseline = {("other.md", "https://example.com/broken")}
+        baseline = {("other.md", "https://example.com/broken"): LinkStatus.BROKEN}
         r = _result(source_file="docs/index.md")
         assert only_new([r], baseline) == [r]
+
+    def test_redirect_degrading_to_broken_refails(self) -> None:
+        # This is the bug: a link baselined while merely a redirect must not
+        # stay green once it degrades to broken at the same (file, url).
+        baseline = {("docs/index.md", "https://example.com/broken"): LinkStatus.REDIRECT}
+        r = _result(status=LinkStatus.BROKEN, http_code=404)
+        assert only_new([r], baseline) == [r]
+
+    def test_redirect_staying_redirect_is_suppressed(self) -> None:
+        baseline = {("docs/index.md", "https://example.com/broken"): LinkStatus.REDIRECT}
+        r = _result(status=LinkStatus.REDIRECT, http_code=301)
+        assert only_new([r], baseline) == []
+
+    def test_broken_staying_broken_is_suppressed(self) -> None:
+        baseline = {("docs/index.md", "https://example.com/broken"): LinkStatus.BROKEN}
+        r = _result(status=LinkStatus.BROKEN, http_code=500)
+        assert only_new([r], baseline) == []
+
+    def test_broken_improving_to_redirect_stays_suppressed(self) -> None:
+        # Strictly-better transition: not the failure this feature guards
+        # against, so it must not be forced back to red.
+        baseline = {("docs/index.md", "https://example.com/broken"): LinkStatus.BROKEN}
+        r = _result(status=LinkStatus.REDIRECT, http_code=301)
+        assert only_new([r], baseline) == []
+
+    def test_too_many_redirects_is_equal_tier_to_broken(self) -> None:
+        baseline = {("docs/index.md", "https://example.com/broken"): LinkStatus.BROKEN}
+        r = _result(status=LinkStatus.TOO_MANY_REDIRECTS, http_code=None)
+        assert only_new([r], baseline) == []
+
+    def test_redirect_degrading_to_too_many_redirects_refails(self) -> None:
+        baseline = {("docs/index.md", "https://example.com/broken"): LinkStatus.REDIRECT}
+        r = _result(status=LinkStatus.TOO_MANY_REDIRECTS, http_code=None)
+        assert only_new([r], baseline) == [r]
+
+    def test_legacy_status_less_baseline_entry_suppresses_unconditionally(self) -> None:
+        # A baseline file written before this change carries no status per
+        # entry. It must keep suppressing, not silently re-fail an entire
+        # repo's CI just because it wasn't regenerated.
+        baseline = {("docs/index.md", "https://example.com/broken"): None}
+        r = _result(status=LinkStatus.BROKEN, http_code=404)
+        assert only_new([r], baseline) == []

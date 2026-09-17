@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from linksanity.baseline import load_baseline, only_new
+from linksanity.baseline import _NOTABLE, _SEVERITY, load_baseline, only_new
 from linksanity.queue import LinkResult, LinkStatus, LinkType
 
 
@@ -136,3 +136,11 @@ class TestOnlyNew:
         baseline = {("docs/index.md", "https://example.com/broken"): None}
         r = _result(status=LinkStatus.BROKEN, http_code=404)
         assert only_new([r], baseline) == []
+
+
+def test_every_notable_status_has_an_explicit_severity_tier() -> None:
+    # _severity() defaults an unmapped status to tier 0. If a status is ever
+    # dropped from _SEVERITY (e.g. removed from queue.FAILING_STATUSES) while
+    # staying in _NOTABLE, that default would silently swallow it instead of
+    # erroring — so pin the mapping directly rather than through _severity().
+    assert _SEVERITY.keys() >= _NOTABLE

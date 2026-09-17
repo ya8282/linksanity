@@ -72,8 +72,6 @@ jobs:
 
 **The action pins a version, it does not track latest.** This is intended, documented behaviour, not a defect. The action's `version` input defaults to `0.2.0`, a specific pin, not an empty string. A workflow that uses `ya8282/linksanity-action@v1` without setting `version:` therefore installs `linksanity==0.2.0`, not whatever the newest release on PyPI is. `linksanity init`'s local cost-estimate output names this pinned version, so the estimate and the generated workflow agree. If you want to track the newest release instead, pass `version: ""` explicitly; a CLI change (e.g. a renamed or removed flag) can then break the action without warning. To pin to something other than `0.2.0`, pass an explicit `version: "X.Y.Z"`.
 
-**On the currently released `ya8282/linksanity-action@v1`, the action's `::error::` annotations and its exit code can disagree.** A run whose only failures are `too_many_redirects` (a redirect loop) exits nonzero without producing any annotation explaining why, and `broken-count` undercounts by omitting those entries (linksanity-jx1). A fix — aligning the count, the annotations, and the exit code on the same set of failing statuses, and annotating a redirect loop as one — exists but has not yet been released under the `v1` tag; if you need it now, pin the action to a commit SHA off that fix rather than `@v1`. Once `v1` is re-pointed past the fix, this paragraph can be deleted.
-
 ## Option B: install and run the CLI directly
 
 Prefer to install the CLI directly instead of using the action — for example on self-hosted runners without Marketplace access, or when you want full control over the install step.

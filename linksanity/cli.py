@@ -834,8 +834,12 @@ def _validate_path_values(values: list[str]) -> None:
     for value in values:
         bare = value.rstrip("/")
         if not _is_safe_name(bare):
+            # _refusal_reason gets the original value, not `bare`: stripping
+            # trailing slashes from an all-slash value like "/" or "//" would
+            # collapse it to "", destroying the leading-slash information
+            # `_refusal_reason` needs to name the real problem.
             typer.echo(
-                f"[linksanity] cannot use --paths {value!r}: {_refusal_reason(bare)}",
+                f"[linksanity] cannot use --paths {value!r}: {_refusal_reason(value)}",
                 err=True,
             )
             raise typer.Exit(2)

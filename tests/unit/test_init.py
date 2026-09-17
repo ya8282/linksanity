@@ -733,7 +733,7 @@ def test_init_cli_paths_accepts_dotted_names_without_traversal_component(
     assert _WORKFLOW_PATH.exists()
 
 
-@pytest.mark.parametrize("bad_path", ["/etc", "/etc/"])
+@pytest.mark.parametrize("bad_path", ["/etc", "/etc/", "/", "//"])
 def test_init_cli_paths_rejects_leading_slash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad_path: str
 ) -> None:
@@ -745,6 +745,22 @@ def test_init_cli_paths_rejects_leading_slash(
     assert result.exit_code == 2
     assert bad_path in result.stderr
     assert "repo-relative" in result.stderr
+    assert not Path(".github").exists()
+
+
+def test_init_cli_paths_rejects_empty_string(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An empty --paths value is neither a leading-slash nor a word-split
+    problem; it needs its own message rather than misreporting one of those."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", ""])
+
+    assert result.exit_code == 2
+    assert "is empty" in result.stderr
+    assert "repo-relative" not in result.stderr
     assert not Path(".github").exists()
 
 

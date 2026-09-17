@@ -139,6 +139,8 @@ def _top_component(rel: Path) -> str | None:
 
 
 def _refusal_reason(name: str) -> str:
+    if not name:
+        return "is empty; a paths: value must name at least one file or directory"
     if _has_traversal_component(name):
         return "contains a '..' path component; a workflow paths: value must stay inside the checkout"
     if name.startswith("/"):

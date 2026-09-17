@@ -96,7 +96,7 @@ A few behaviors worth knowing before you script around `init`:
 
 - **`--dry-run` alone still hits the network.** It skips the *writes*, not the scan. Combine with `--no-measure` for a fully offline dry run.
 - **Non-interactive without `--yes` fails fast.** If stdin isn't a TTY (e.g. piped, or in CI) and `--yes` is missing, `init` exits `2` rather than hanging on a prompt, and tells you to rerun with `--yes --paths <dir>`.
-- **An existing target file is an error under `--yes`, a prompt without it.** If the workflow file (or baseline file) already exists, `--yes` refuses and exits `2`; interactively you're asked whether to overwrite.
+- **An existing target file is an error under `--yes`, a prompt without it — except under `--dry-run`, which never refuses.** If the workflow file (or baseline file) already exists, `--yes` refuses and exits `2`; interactively you're asked whether to overwrite. `--dry-run` skips that check entirely: it prints a note that the file already exists and that a real run would refuse, then renders the normal dry-run output and exits `0`.
 
 ## Quick start
 

@@ -92,5 +92,5 @@ For `init`:
 
 | Code | Meaning |
 |---|---|
-| `0` | Success, or a clean `--dry-run` |
-| `2` | Any refusal or error (bad arguments, non-TTY stdin without `--yes`, an existing target file, a failed scan or write) |
+| `0` | Success, or any `--dry-run` (including one where the target file already exists — dry runs never refuse) |
+| `2` | Any refusal or error on a real (non-dry) run: bad arguments, non-TTY stdin without `--yes`, an existing target file, a failed scan or write |

@@ -945,7 +945,9 @@ def init_cmd(
         False, "--yes", help="Run non-interactively; requires --paths"
     ),
     paths: list[str] | None = typer.Option(  # noqa: B008
-        None, "--paths", help="Paths to scan for `paths:` (skips detection)"
+        None,
+        "--paths",
+        help="Paths to scan for `paths:` (skips detection); literal paths, not globs",
     ),
     no_baseline: bool = typer.Option(
         False, "--no-baseline", help="Skip baseline generation even if breakage is found"

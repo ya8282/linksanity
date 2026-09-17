@@ -764,6 +764,24 @@ def test_init_cli_paths_rejects_empty_string(
     assert not Path(".github").exists()
 
 
+@pytest.mark.parametrize("bad_path", ["*.md", "docs/**"])
+def test_init_cli_paths_rejects_glob_with_glob_specific_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad_path: str
+) -> None:
+    """A '*' in --paths is a word-split hazard too, but the generic message
+    doesn't tell a user who typed a glob that globs aren't supported; this
+    needs its own message rather than the catch-all one."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", bad_path])
+
+    assert result.exit_code == 2
+    assert "glob" in result.stderr
+    assert "literal" in result.stderr
+    assert not Path(".github").exists()
+
+
 def test_init_cli_no_tty_without_yes_exits_2_with_guidance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

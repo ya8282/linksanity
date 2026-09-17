@@ -84,7 +84,7 @@ The `~9s` overhead figure is illustrative, not a guarantee: it comes from a fixe
 
 | Flag | Effect |
 |---|---|
-| `--paths <dir>` | Scan these paths instead of running detection; required together with `--yes`. Repeat the flag per path (`--paths docs/ --paths README.md`). It is not space-separated like the `paths:` line in the generated workflow |
+| `--paths <dir>` | Scan these paths instead of running detection; required together with `--yes`. Repeat the flag per path (`--paths docs/ --paths README.md`). It is not space-separated like the `paths:` line in the generated workflow. Values are literal directory or file paths, not glob patterns |
 | `--no-baseline` | Skip baseline generation even if breakage is found |
 | `--no-measure` | Skip the timed scan entirely: no estimate, no baseline offer (for offline/air-gapped use) |
 | `--workflow-name <name>` | Filename for the generated workflow: a bare filename only, no path separators (default `linkcheck.yml`) |

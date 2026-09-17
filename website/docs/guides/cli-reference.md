@@ -116,7 +116,7 @@ walkthrough.
 | Flag | Default | Description |
 |---|---|---|
 | `--yes` | off | Run non-interactively; requires `--paths` |
-| `--paths <dir>` | — | Paths to scan for the workflow's `paths:` input; skips detection. Repeat per path |
+| `--paths <dir>` | — | Paths to scan for the workflow's `paths:` input; skips detection. Repeat per path. Literal paths, not globs |
 | `--no-baseline` | off | Skip baseline generation even if breakage is found |
 | `--no-measure` | off | Skip the timed scan entirely: no estimate, no baseline offer |
 | `--workflow-name <name>` | `linkcheck.yml` | Filename for the generated workflow: a bare name, no path separators |

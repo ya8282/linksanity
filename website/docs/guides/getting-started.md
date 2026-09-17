@@ -114,7 +114,7 @@ ok=38   broken=1   redirect=1   skipped=0
 ### Scan local source files
 
 ```bash
-# Scan a directory (walks all supported file extensions recursively — see /Overview for supported formats)
+# Scan a directory (walks all supported file extensions recursively — see the Overview page for supported formats)
 linksanity scan ./docs/
 
 # Scan specific files or globs

@@ -12,12 +12,27 @@ from linksanity.cache import Cache
 from linksanity.config import Config
 from linksanity.parsers import asciidoc, docbook, html, markdown, mdx, notebook, rst
 from linksanity.parsers import myst as myst_parser
+from linksanity.pathwalk import is_pruned_dir
 from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
 from linksanity.router import classify, dispatch
 
 # Only network-checked link types are worth caching — filesystem/anchor checks
 # are already fast and can go stale the moment a local file changes.
 _CACHEABLE = {LinkType.EXTERNAL, LinkType.EXTERNAL_ANCHOR}
+
+# Same ten suffixes as init.py's detect_paths (init.py:_SUFFIXES).
+_SUFFIXES = (
+    ".md",
+    ".rst",
+    ".html",
+    ".htm",
+    ".adoc",
+    ".asciidoc",
+    ".mdx",
+    ".ipynb",
+    ".xml",
+    ".dbk",
+)
 
 
 async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
@@ -140,6 +155,38 @@ def _collect_docbook_ids(paths: list[Path]) -> set[str]:
     return docbook_ids
 
 
+def _walk_pruned(root: Path) -> list[Path]:
+    """Return every supported-suffix file under root, pruning vendored/hidden dirs.
+
+    Mirrors init.py's `detect_paths` walk (both use
+    `linksanity.pathwalk.is_pruned_dir`), so a directory init proposes isn't
+    then scanned in full by CI including its vendored subtrees. Pruning
+    means never descending into a matched directory -- nothing nested under
+    it, however deep, can surface -- but it only applies to directories
+    encountered while walking; `root` itself is never checked against the
+    denylist, so an explicitly-requested denylisted directory (or a file
+    inside one) is still scanned in full. Dot-directories are pruned the
+    same way; dot-files are not (a root-level `.hidden.md` is still found).
+    """
+    found: list[Path] = []
+
+    def _recurse(directory: Path) -> None:
+        try:
+            entries = sorted(directory.iterdir())
+        except OSError:
+            return
+        for entry in entries:
+            if entry.is_dir():
+                if is_pruned_dir(entry.name):
+                    continue
+                _recurse(entry)
+            elif entry.is_file() and entry.suffix.lower() in _SUFFIXES:
+                found.append(entry)
+
+    _recurse(root)
+    return found
+
+
 def _expand_paths(patterns: list[str]) -> list[Path]:
     """Expand file paths, directories, and glob patterns to a deduplicated list."""
     seen: set[Path] = set()
@@ -150,22 +197,7 @@ def _expand_paths(patterns: list[str]) -> list[Path]:
         if p.is_file():
             candidates: list[Path] = [p]
         elif p.is_dir():
-            candidates = [
-                c
-                for suffix in (
-                    ".md",
-                    ".rst",
-                    ".html",
-                    ".htm",
-                    ".adoc",
-                    ".asciidoc",
-                    ".mdx",
-                    ".ipynb",
-                    ".xml",
-                    ".dbk",
-                )
-                for c in p.rglob(f"*{suffix}")
-            ]
+            candidates = _walk_pruned(p)
         else:
             candidates = [
                 Path(m)

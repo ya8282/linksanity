@@ -26,7 +26,6 @@ from linksanity.fixer import (
     render_diff,
 )
 from linksanity.init import (
-    _DENYLIST,
     _SUFFIXES,
     DetectionResult,
     Proposal,
@@ -38,6 +37,7 @@ from linksanity.init import (
     render_estimate,
     render_workflow,
 )
+from linksanity.pathwalk import DENYLIST as _DENYLIST
 from linksanity.queue import FAILING_STATUSES, LinkQueue, LinkResult
 from linksanity.reporters import report
 from linksanity.scanner import run_scan

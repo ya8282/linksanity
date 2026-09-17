@@ -17,13 +17,7 @@ linksanity scan README.md docs/**/*.md
 
 linksanity checks links in 8 file formats: Markdown (`.md`), reStructuredText (`.rst`), HTML (`.html`, `.htm`), AsciiDoc (`.adoc`, `.asciidoc`), MDX (`.mdx`), Jupyter Notebooks (`.ipynb`, markdown cells only), MyST-flavored Markdown (`.md` with `--myst`, below), and DocBook (`.xml`, `.dbk`).
 
-When a path is a directory, linksanity walks it recursively for every one of those extensions. When a path is a file or a glob, it's used as given — no extension filtering beyond what the glob itself matches.
-
-## Known issue: directory scans descend into `node_modules` and `.venv`
-
-Scanning a directory walks it recursively with no exclusion list — verified in `linksanity/scanner.py`'s `_expand_paths`, which calls `Path.rglob` per extension and never skips vendored or virtual-env directories. Point `linksanity scan` at a repo root that contains a `node_modules/` or `.venv/` directory (a Python virtualenv commonly ships `.md` files inside installed package metadata) and it walks into both, parsing every matching file it finds there too.
-
-**Workaround until this is fixed:** scan a narrower path that doesn't contain those directories — `linksanity scan ./docs/` rather than `linksanity scan .`. A [`.linksanity-skip`](/recipes/excluding-links) file does not fix this: it only filters which already-discovered *URLs* get checked, not which files get walked in the first place, so it can't stop linksanity from parsing files inside `node_modules/` or `.venv/`.
+When a path is a directory, linksanity walks it recursively for every one of those extensions, skipping vendored and hidden directories along the way (`node_modules`, `.venv`, `venv`, `site-packages`, `vendor`, `target`, `build`, `dist`, `_build`, `.tox`, and any directory starting with `.`, case-insensitive) — the same rule `linksanity init` uses to propose paths, so a directory init proposes isn't scanned in full including its vendored subtrees. That pruning only applies while walking *into* a directory: a path you pass explicitly is always scanned in full even if it's one of those names (`linksanity scan node_modules/docs/` still scans `node_modules/docs/`), and dot-*files* (e.g. a root-level `.hidden.md`) are never pruned, only dot-*directories*. When a path is a file or a glob, it's used as given — no extension filtering or pruning beyond what the glob itself matches.
 
 ## `--offline`
 

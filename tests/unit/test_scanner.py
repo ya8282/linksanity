@@ -14,7 +14,7 @@ import respx
 from linksanity import cache as cache_module
 from linksanity.config import Config
 from linksanity.queue import LinkResult, LinkStatus, LinkType
-from linksanity.scanner import _collect_docbook_ids, run_scan
+from linksanity.scanner import _collect_docbook_ids, _expand_paths, run_scan
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 DOCBOOK_BOOK_DIR = FIXTURES / "docbook-book"
@@ -321,6 +321,70 @@ class TestDispatchExceptionHandling:
             pytest.raises(asyncio.CancelledError),
         ):
             await run_scan([str(doc)], config)
+
+
+class TestExpandPathsPruning:
+    """linksanity-5j6: the directory walk must prune the same vendored/hidden
+    directories init.py's detection prunes, but only while walking into a
+    directory -- an explicitly-requested path is always scanned in full."""
+
+    def test_denylisted_dir_pruned_several_levels_deep(self, tmp_path: Path) -> None:
+        deep = tmp_path / "node_modules" / "a" / "b" / "c"
+        deep.mkdir(parents=True)
+        (deep / "deep.md").write_text("# deep\n")
+        (tmp_path / "docs.md").write_text("# docs\n")
+
+        paths = _expand_paths([str(tmp_path)])
+
+        assert [p.name for p in paths] == ["docs.md"]
+
+    def test_dot_directory_pruned(self, tmp_path: Path) -> None:
+        for dotdir in (".venv", ".git"):
+            nested = tmp_path / dotdir / "nested"
+            nested.mkdir(parents=True)
+            (nested / "hidden.md").write_text("# hidden\n")
+        (tmp_path / "docs.md").write_text("# docs\n")
+
+        paths = _expand_paths([str(tmp_path)])
+
+        assert [p.name for p in paths] == ["docs.md"]
+
+    def test_explicit_denylisted_path_is_still_scanned(self, tmp_path: Path) -> None:
+        target = tmp_path / "node_modules" / "docs"
+        target.mkdir(parents=True)
+        (target / "readme.md").write_text("# readme\n")
+
+        paths = _expand_paths([str(target)])
+
+        assert [p.name for p in paths] == ["readme.md"]
+
+    def test_explicit_file_inside_denylisted_dir_is_still_scanned(
+        self, tmp_path: Path
+    ) -> None:
+        venv_dir = tmp_path / ".venv" / "share" / "doc"
+        venv_dir.mkdir(parents=True)
+        f = venv_dir / "license.md"
+        f.write_text("# license\n")
+
+        paths = _expand_paths([str(f)])
+
+        assert paths == [f]
+
+    def test_normal_nested_directory_still_scanned(self, tmp_path: Path) -> None:
+        nested = tmp_path / "docs" / "guides"
+        nested.mkdir(parents=True)
+        (nested / "guide.md").write_text("# guide\n")
+
+        paths = _expand_paths([str(tmp_path)])
+
+        assert [p.name for p in paths] == ["guide.md"]
+
+    def test_root_level_dot_file_is_not_pruned(self, tmp_path: Path) -> None:
+        (tmp_path / ".hidden.md").write_text("# hidden\n")
+
+        paths = _expand_paths([str(tmp_path)])
+
+        assert [p.name for p in paths] == [".hidden.md"]
 
 
 class TestDocbookIdPrescan:

@@ -14,6 +14,7 @@ from pathlib import Path
 
 from linksanity._meta import VERSION
 from linksanity.config import Config, load_config
+from linksanity.pathwalk import is_pruned_dir as _is_pruned_dir
 
 # Same ten suffixes as scanner.py's _expand_paths (scanner.py:155-167).
 # Keep this list in sync with that one.
@@ -35,19 +36,6 @@ _SUFFIXES = (
 # Java or .NET repo look documentation-heavy.
 _PROSE_SUFFIXES = {".md", ".rst", ".adoc", ".mdx"}
 _HTML_SUFFIXES = {".html", ".htm"}
-
-_DENYLIST = {
-    "node_modules",
-    ".venv",
-    "venv",
-    "site-packages",
-    "vendor",
-    "target",
-    "build",
-    "dist",
-    "_build",
-    ".tox",
-}
 
 # action.yml leaves $PATHS unquoted so it word-splits into argv entries; a
 # component must contain no whitespace, "#", "*", or quotes, and must not
@@ -78,11 +66,6 @@ class DetectionResult:
     proposals: list[Proposal] = field(default_factory=list)
     refused: list[RefusedPath] = field(default_factory=list)
     used_html_fallback: bool = False
-
-
-def _is_pruned_dir(name: str) -> bool:
-    """True if a directory should not be descended into at all."""
-    return name.startswith(".") or name.lower() in _DENYLIST
 
 
 def _has_traversal_component(name: str) -> bool:
@@ -340,11 +323,14 @@ def render_estimate(
 def count_divergence_warning(detected_file_count: int, measured_file_count: int) -> str | None:
     """Warn when the measuring scan touched far more files than detection proposed.
 
-    Detection prunes the denylist (`node_modules`, `vendor`, ...) but the
-    real scan uses a bare `rglob` and does not (`scanner.py`). When the
-    measured file count exceeds the detected count by more than 2x, the
-    selected directories likely contain an undetected tree (often vendored)
-    the scan will descend into, so the user can deselect before committing.
+    Detection and the real scan both prune the denylist (`node_modules`,
+    `vendor`, ...) and dot-directories via `linksanity.pathwalk`, but an
+    explicitly-entered path (the manual-path prompt, or a `paths:` value
+    edited by hand) is exempt from pruning even when it names a denylisted
+    directory (`scanner.py`). When the measured file count exceeds the
+    detected count by more than 2x, the selected directories likely contain
+    an undetected tree the scan will descend into, so the user can
+    deselect before committing.
 
     Boundary: exactly 2x does **not** warn; only strictly greater than 2x
     does. A modest, plausible discrepancy should not nag on every run.

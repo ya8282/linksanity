@@ -51,6 +51,20 @@ linksanity scan ./docs/ --ignore-domains ignore.txt
 
 If you only want to skip specific pages on a host rather than the whole domain, use `--skip-urls` instead — see [Excluding Links](/recipes/excluding-links).
 
+## Passing `--config` with a path that doesn't exist
+
+**Symptom:**
+
+```
+[linksanity] --config file not found: /path/to/config.toml
+```
+
+Exits with status `2` before doing anything else — no scan is attempted.
+
+**Cause:** an explicit `--config` path is authoritative; unlike the no-flag case (which searches upward from the current directory for the nearest `linksanity.toml`, stopping at the repository root, see [Configuration](/guides/configuration)), a `--config` value that doesn't resolve to a real file is treated as an error, not a signal to fall back to defaults.
+
+**Fix:** check for a typo'd path, and check where you're running the command from — a relative `--config` path resolves against the shell's working directory when the command runs, not the directory holding the file you're scanning. Pass an absolute path, or `cd` into the directory that holds `linksanity.toml` first.
+
 ## `crawl` exits immediately with "Playwright is required"
 
 **Symptom:**

@@ -284,13 +284,17 @@ jobs:
           path: linkcheck.json
 ```
 
-**File-based skip list** — commit a `.linksanity-skip` file at your repo root to exclude auth-gated or staging URLs. Supports `*` wildcards:
+**File-based skip list** — keep a skip file (by convention `.linksanity-skip` at your repo root) to exclude auth-gated or staging URLs, and pass it with `--skip-urls`. The file is not discovered automatically. Supports `*` wildcards:
 
 ```
 # .linksanity-skip
 https://app.example.com/login
 https://staging.example.com/*
 https://internal.corp.example.com/*
+```
+
+```bash
+linksanity scan docs/ --skip-urls .linksanity-skip
 ```
 
 **Report failing links to a GitHub Issue** — useful for scheduled runs that find regressions after merge. Creating or updating the issue needs `issues: write`, so extend the job's `permissions:` block declared above from `contents: read` to:

@@ -37,7 +37,7 @@ https://internal.corp.example.com/*
 ```
 
 - Blank lines are ignored.
-- A line is a comment only if `#` is the very first character — `# comment` is dropped, but a line indented before the `#` (`  # comment`) is **not** recognized as a comment and is treated as a literal pattern instead. Keep comment lines unindented.
+- A line whose trimmed content starts with `#` is a comment and is dropped, whether or not it's indented — `# comment` and `  # comment` are both ignored.
 - Every other line is matched against discovered URLs with the same `fnmatch` wildcard rules as `--skip-urls` above (because the file is read into the same `skip_urls` set).
 
 In CI, wire it into the scan step:

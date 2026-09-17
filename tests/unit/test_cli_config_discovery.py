@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from linksanity.cli import _announce_config, _discover_config, app
+from linksanity.cli import _announce_config, _discover_config, _read_domains, app
 from linksanity.config import ConfigError
 
 runner = CliRunner()
@@ -85,6 +85,30 @@ class TestDiscoverConfigHelper:
         empty.mkdir()
         monkeypatch.chdir(empty)
         assert _discover_config() is None
+
+
+class TestReadDomainsHelper:
+    """Direct unit tests of the domain/pattern file parser (linksanity-8d1)."""
+
+    def test_indented_comment_matches_column_zero_comment(
+        self, tmp_path: Path
+    ) -> None:
+        indented = tmp_path / "indented.txt"
+        indented.write_text("example.com\n    # a comment\nother.com\n")
+        flush = tmp_path / "flush.txt"
+        flush.write_text("example.com\n# a comment\nother.com\n")
+        assert _read_domains(str(indented)) == _read_domains(str(flush))
+        assert _read_domains(str(indented)) == {"example.com", "other.com"}
+
+    def test_tab_indented_comment_matches_column_zero_comment(
+        self, tmp_path: Path
+    ) -> None:
+        indented = tmp_path / "indented_tab.txt"
+        indented.write_text("example.com\n\t# a comment\nother.com\n")
+        flush = tmp_path / "flush.txt"
+        flush.write_text("example.com\n# a comment\nother.com\n")
+        assert _read_domains(str(indented)) == _read_domains(str(flush))
+        assert _read_domains(str(indented)) == {"example.com", "other.com"}
 
 
 class TestScanConfigDiscoveryEndToEnd:

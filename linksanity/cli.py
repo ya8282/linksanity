@@ -89,7 +89,7 @@ def _read_domains(path: str | None) -> set[str]:
         return set()
     try:
         lines = Path(path).read_text(encoding="utf-8").splitlines()
-        return {ln.strip() for ln in lines if ln.strip() and not ln.startswith("#")}
+        return {ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")}
     except OSError as exc:
         typer.echo(f"[linksanity] cannot read domains file: {exc}", err=True)
         raise typer.Exit(2) from exc

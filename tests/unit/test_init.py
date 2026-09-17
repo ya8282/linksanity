@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -647,6 +648,36 @@ def test_init_cli_workflow_name_accepts_bare_yaml(
     assert Path(".github/workflows/check.yaml").exists()
 
 
+@pytest.mark.parametrize("bad_path", ["../elsewhere", "a/../b", "docs/.."])
+def test_init_cli_paths_rejects_traversal_component(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad_path: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", bad_path])
+
+    assert result.exit_code == 2
+    assert bad_path in result.stderr
+    assert "checkout" in result.stderr
+    assert not Path(".github").exists()
+
+
+@pytest.mark.parametrize("ok_path", ["docs/", "my-docs..v2"])
+def test_init_cli_paths_accepts_dotted_names_without_traversal_component(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ok_path: str
+) -> None:
+    """A '..' substring that is not its own path component (e.g. the name
+    'my-docs..v2') is not traversal and must still be accepted."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_ok_result()]))
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", ok_path])
+
+    assert result.exit_code == 0, result.output
+    assert _WORKFLOW_PATH.exists()
+
+
 def test_init_cli_no_tty_without_yes_exits_2_with_guidance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -702,7 +733,7 @@ def test_init_cli_closed_stdin_exits_2_out_of_process(tmp_path: Path) -> None:
     go through the `_stdin_is_tty` monkeypatch seam used by the rest of this
     file -- that seam is exactly what hid the original bug."""
     result = subprocess.run(
-        f"{sys.executable} -m linksanity init 0<&-",
+        f"{shlex.quote(sys.executable)} -m linksanity init 0<&-",
         shell=True,
         cwd=tmp_path,
         capture_output=True,

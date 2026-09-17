@@ -85,9 +85,23 @@ def _is_pruned_dir(name: str) -> bool:
     return name.startswith(".") or name.lower() in _DENYLIST
 
 
+def _has_traversal_component(name: str) -> bool:
+    """True if any '/'-separated component of `name` is exactly '..'.
+
+    Checked as a component, not a substring: 'my-docs..v2' contains '..' but
+    has no traversal component and must still pass.
+    """
+    return ".." in name.split("/")
+
+
 def _is_safe_name(name: str) -> bool:
-    """True if `name` survives action.yml's unquoted `$PATHS` word-splitting."""
-    return bool(_SAFE_COMPONENT.match(name)) and not name.startswith("-")
+    """True if `name` survives action.yml's unquoted `$PATHS` word-splitting
+    and cannot make the generated `paths:` value escape the checkout."""
+    return (
+        bool(_SAFE_COMPONENT.match(name))
+        and not name.startswith("-")
+        and not _has_traversal_component(name)
+    )
 
 
 def _walk(root: Path) -> list[Path]:
@@ -124,6 +138,8 @@ def _top_component(rel: Path) -> str | None:
 
 
 def _refusal_reason(name: str) -> str:
+    if _has_traversal_component(name):
+        return "contains a '..' path component; a workflow paths: value must stay inside the checkout"
     if name.startswith("-"):
         return "starts with '-', which would word-split into a flag in the unquoted paths: value"
     return "contains a character unsafe for the unquoted paths: word-split (whitespace, #, *, or a quote)"

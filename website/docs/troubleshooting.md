@@ -65,6 +65,20 @@ Exits with status `2` before doing anything else — no scan is attempted.
 
 **Fix:** check for a typo'd path, and check where you're running the command from — a relative `--config` path resolves against the shell's working directory when the command runs, not the directory holding the file you're scanning. Pass an absolute path, or `cd` into the directory that holds `linksanity.toml` first.
 
+## `linksanity.toml` exists but is rejected (syntax, type, or range error)
+
+**Symptom:**
+
+```
+[linksanity] invalid TOML syntax in /path/to/linksanity.toml: ...
+```
+
+Exits with status `2` before doing anything else — no scan is attempted.
+
+**Cause:** unlike a missing `--config` path, this `linksanity.toml` was found but failed validation — malformed syntax (shown above), a wrong-type value (e.g. `ignore_domains = "example.com"` where a list is needed), an unparsable integer, or an out-of-range value like `workers = -5` (must be `>= 1`). Per-key errors name the key; a bad file (malformed, non-UTF-8, unreadable) names the file instead. A range error can also fire from a flag with no config file, e.g. `--workers -5`, which omits the `in <path>` suffix.
+
+**Fix:** for a syntax error, go to the line and column the message gives. For a rejected value, check the key's expected type and minimum in [Configuration](/guides/configuration). For `is not valid UTF-8`, re-save as UTF-8; for `cannot read`, check the file's permissions.
+
 ## `crawl` exits immediately with "Playwright is required"
 
 **Symptom:**

@@ -128,6 +128,14 @@ def _int(data: dict[str, object], key: str, default: int, path: Path | None) -> 
     if key not in data:
         return default
     v = data[key]
+    # bool is a subclass of int, so it passes isinstance(v, int) before the
+    # type gate below ever runs -- workers = true would silently become 1.
+    # Reject it explicitly, ahead of the (int, float, str) gate, so every
+    # integer key gets the same clear ConfigError a wrong type would produce.
+    if isinstance(v, bool):
+        raise ConfigError(
+            f"invalid value for '{key}'{_error_suffix(path)}: expected an integer, got {_type_name(v)}"
+        )
     _check_type(v, key, path, (int, float, str), "an integer")
     try:
         return int(cast("int | float | str", v))

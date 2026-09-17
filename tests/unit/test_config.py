@@ -55,6 +55,15 @@ class TestTomlLoading:
         cfg = load_config(toml_path=FIXTURES / "linksanity.toml")
         assert "docs.example.com" in cfg.js_domains
 
+    def test_numeric_string_still_accepted_for_int_key(self, tmp_path: Path) -> None:
+        """A numeric string for an integer key must keep working -- load-bearing
+        for anyone setting values from environment-style strings (linksanity-8md).
+        Only bool is rejected; str is still coerced."""
+        p = tmp_path / "linksanity.toml"
+        p.write_text('workers = "5"\n')
+        cfg = load_config(toml_path=p)
+        assert cfg.workers == 5
+
 
 class TestCliOverrides:
     def test_override_replaces_file_value(self) -> None:
@@ -242,6 +251,21 @@ class TestWronglyTypedValuesRaise:
         with pytest.raises(ConfigError, match=r"annotations.*expected a boolean"):
             load_config(toml_path=p)
 
+    def test_int_key_given_a_bool_true(self, tmp_path: Path) -> None:
+        """bool is a subclass of int -- workers = true must not silently
+        become workers = 1 (linksanity-8md). It must raise the same shape
+        of ConfigError as any other wrong type, naming 'bool' not 'int'."""
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = true\n")
+        with pytest.raises(ConfigError, match=r"workers.*expected an integer.*got bool"):
+            load_config(toml_path=p)
+
+    def test_int_key_given_a_bool_false(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = false\n")
+        with pytest.raises(ConfigError, match=r"workers.*expected an integer.*got bool"):
+            load_config(toml_path=p)
+
     def test_int_key_given_a_bare_toml_date(self, tmp_path: Path) -> None:
         """A bare TOML date (no quotes) parses to datetime.date, which is
         neither int/float/str -- _int must reject it and report the actual
@@ -256,6 +280,33 @@ class TestWronglyTypedValuesRaise:
         p.write_text("skip_urls = 42\n")
         with pytest.raises(ConfigError, match=str(p)):
             load_config(toml_path=p)
+
+
+class TestBooleanKeysUnaffectedByIntBoolRejection:
+    """The bool-rejection added to _int for integer keys (linksanity-8md)
+    must not touch _bool/_bool_or_none -- every genuine boolean key still
+    accepts true/false."""
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "check_anchors",
+            "check_images",
+            "myst",
+            "block_analytics",
+            "incremental",
+            "offline",
+            "annotations",
+        ],
+    )
+    @pytest.mark.parametrize("value", ["true", "false"])
+    def test_boolean_key_accepts_true_and_false(
+        self, tmp_path: Path, key: str, value: str
+    ) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text(f"{key} = {value}\n")
+        cfg = load_config(toml_path=p)
+        assert getattr(cfg, key) is (value == "true")
 
 
 class TestAllKeysAbsentStillLoads:

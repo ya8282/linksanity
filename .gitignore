@@ -32,3 +32,8 @@ htmlcov/
 
 # Claude Code personal settings (machine-specific paths)
 .claude/settings.local.json
+
+# Docusaurus site
+website/node_modules
+website/build
+website/.docusaurus

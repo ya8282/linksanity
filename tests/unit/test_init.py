@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 from linksanity._meta import VERSION
 from linksanity.cli import app
 from linksanity.init import (
+    _ACTION_PINNED_VERSION,
     DetectionResult,
     Proposal,
     _format_duration,
@@ -239,13 +240,28 @@ def test_render_estimate_measured_and_overhead_are_separate_lines() -> None:
     assert "2 domains" in measured_line
 
 
-def test_render_estimate_version_note_matches_project_version() -> None:
+def test_render_estimate_version_note_names_pinned_ci_version() -> None:
     lines = render_estimate(61, unique_urls=1, unique_domains=1, overhead_seconds=40)
 
     assert (
-        f"Measured with linksanity {VERSION} locally; CI installs the latest release."
+        f"Measured with linksanity {VERSION} locally; "
+        f"CI installs the pinned {_ACTION_PINNED_VERSION} release."
         in lines
     )
+    assert not any("latest" in line for line in lines)
+
+
+def test_render_estimate_measured_and_overhead_parens_align() -> None:
+    # The "(" that opens each line's trailing note should land in the same
+    # column, regardless of how wide the measured or overhead duration
+    # render as (e.g. "5s" vs "2m 5s" vs "9s").
+    for measured_seconds in (5, 61, 125):
+        lines = render_estimate(
+            measured_seconds, unique_urls=1, unique_domains=1, overhead_seconds=40
+        )
+        measured_line = next(line for line in lines if line.startswith("Measured locally:"))
+        overhead_line = next(line for line in lines if line.startswith("CI overhead:"))
+        assert measured_line.index("(") == overhead_line.index("(")
 
 
 def test_render_estimate_billing_lines_present() -> None:

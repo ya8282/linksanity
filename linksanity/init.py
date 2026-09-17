@@ -264,6 +264,11 @@ def measuring_config(toml_path: Path | None = None) -> Config:
 # upload are billed minutes too and excluding them would understate cost.
 _CI_OVERHEAD_SECONDS = 9.0  # seconds
 
+# The linksanity version the generated workflow actually installs: the
+# `version` input's default in action-repo/action.yml, not this project's own
+# VERSION. Update this whenever that default changes.
+_ACTION_PINNED_VERSION = "0.2.0"
+
 # Illustrative-only constants for the private-repo cost line. `init` never
 # queries the GitHub API for a repo's actual PR volume.
 _ILLUSTRATIVE_RUNS_PER_MONTH = 30
@@ -308,12 +313,19 @@ def render_estimate(
     """
     billed = estimate_billed_minutes(measured_seconds, overhead_seconds)
     monthly = billed * _ILLUSTRATIVE_RUNS_PER_MONTH
+    measured_line_prefix = f"Measured locally:  {_format_duration(measured_seconds)}   "
+    overhead_line_prefix = f"CI overhead:      ~{_format_duration(overhead_seconds)}"
+    # Pad to the same column as the "(" above instead of a hardcoded space
+    # count, so the two parentheticals stay aligned regardless of how wide
+    # either rendered duration is (e.g. if _CI_OVERHEAD_SECONDS changes).
+    overhead_padding = " " * max(1, len(measured_line_prefix) - len(overhead_line_prefix))
     return [
-        f"Measured with linksanity {VERSION} locally; CI installs the latest release.",
+        f"Measured with linksanity {VERSION} locally; "
+        f"CI installs the pinned {_ACTION_PINNED_VERSION} release.",
         "",
-        f"Measured locally:  {_format_duration(measured_seconds)}   "
+        f"{measured_line_prefix}"
         f"({unique_urls} unique URLs, {unique_domains} domains)",
-        f"CI overhead:      ~{_format_duration(overhead_seconds)}      "
+        f"{overhead_line_prefix}{overhead_padding}"
         "(runner setup, checkout, python, pip install, artifact upload)",
         f"Estimated billed: ~{billed} min/run   "
         "GitHub rounds each job up to a whole minute",

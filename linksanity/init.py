@@ -147,9 +147,9 @@ def _refusal_reason(name: str) -> str:
         return "starts with '/', an absolute path; paths: values are repo-relative -- drop the leading slash"
     if name.startswith("-"):
         return "starts with '-', which would word-split into a flag in the unquoted paths: value"
-    if "*" in name:
-        return "contains '*'; --paths takes literal directory or file paths, not glob patterns -- pass the containing directory instead"
-    return "contains a character unsafe for the unquoted paths: word-split (whitespace, #, *, or a quote)"
+    if any(ch in name for ch in "*?[]!+"):
+        return "contains a glob-pattern character (*, ?, [, ], !, or +); --paths takes literal directory or file paths, not glob patterns -- pass the containing directory instead"
+    return "contains a character unsafe for the unquoted paths: word-split (whitespace, #, or a quote)"
 
 
 def _classify(name: str, file_count: int) -> Proposal | RefusedPath:

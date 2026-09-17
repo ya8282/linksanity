@@ -14,7 +14,7 @@ from pathlib import Path
 
 from linksanity._meta import VERSION
 from linksanity.config import Config, load_config
-from linksanity.pathwalk import is_pruned_dir as _is_pruned_dir
+from linksanity.pathwalk import should_descend as _should_descend
 
 # Same ten suffixes as scanner.py's _expand_paths (scanner.py:155-167).
 # Keep this list in sync with that one.
@@ -45,7 +45,16 @@ _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9._/-]+$")
 
 @dataclass(frozen=True)
 class Proposal:
-    """A directory or root-level file worth passing to `paths:`, and its file count."""
+    """A directory or root-level file worth passing to `paths:`, and its file count.
+
+    `file_count` deliberately counts every `_SUFFIXES` match under the
+    directory, not just the prose-gate suffixes (`_PROSE_SUFFIXES`) that
+    decided whether to propose it. That matches what the real scan will
+    process once this path is selected, and it's what feeds
+    `count_divergence_warning`'s comparison against the measured scan's file
+    count (spec section 5) -- gating the count to prose suffixes would make
+    that comparison compare different things.
+    """
 
     path: str
     file_count: int
@@ -91,7 +100,16 @@ def _walk(root: Path) -> list[Path]:
     """Return every supported-suffix file under root, pruning denylisted dirs.
 
     Pruning means never descending into a matched directory, so nothing nested
-    under it (however deep) can surface.
+    under it (however deep) can surface. Directory *symlinks* (including a
+    self-referential one) are never descended into either -- see
+    `pathwalk.should_descend` -- but a symlinked file is still counted like
+    any other file; only directory descent is guarded here.
+
+    Dot-*files* at root are deliberately not pruned (only dot-*directories*
+    are, via `should_descend`), so a root-level `.hidden.md` is still found
+    and proposed -- the spec only mandates pruning dot-directories. The
+    scanner's own walk (`scanner.py:_walk_pruned`) makes the same choice via
+    the same shared `pathwalk` module, so detection and the real scan agree.
     """
     found: list[Path] = []
 
@@ -102,9 +120,8 @@ def _walk(root: Path) -> list[Path]:
             return
         for entry in entries:
             if entry.is_dir():
-                if _is_pruned_dir(entry.name):
-                    continue
-                _recurse(entry)
+                if _should_descend(entry):
+                    _recurse(entry)
             elif entry.is_file() and entry.suffix.lower() in _SUFFIXES:
                 found.append(entry)
 

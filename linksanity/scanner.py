@@ -12,7 +12,7 @@ from linksanity.cache import Cache
 from linksanity.config import Config
 from linksanity.parsers import asciidoc, docbook, html, markdown, mdx, notebook, rst
 from linksanity.parsers import myst as myst_parser
-from linksanity.pathwalk import is_pruned_dir
+from linksanity.pathwalk import should_descend
 from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
 from linksanity.router import classify, dispatch
 
@@ -159,14 +159,20 @@ def _walk_pruned(root: Path) -> list[Path]:
     """Return every supported-suffix file under root, pruning vendored/hidden dirs.
 
     Mirrors init.py's `detect_paths` walk (both use
-    `linksanity.pathwalk.is_pruned_dir`), so a directory init proposes isn't
+    `linksanity.pathwalk.should_descend`), so a directory init proposes isn't
     then scanned in full by CI including its vendored subtrees. Pruning
     means never descending into a matched directory -- nothing nested under
     it, however deep, can surface -- but it only applies to directories
     encountered while walking; `root` itself is never checked against the
     denylist, so an explicitly-requested denylisted directory (or a file
     inside one) is still scanned in full. Dot-directories are pruned the
-    same way; dot-files are not (a root-level `.hidden.md` is still found).
+    same way; dot-files are not (a root-level `.hidden.md` is still found) --
+    matching init.py's detection walk, which makes the same choice for the
+    same reason (only dot-*directories* are spec-mandated to prune).
+
+    Directory *symlinks* (including a self-referential one) are never
+    descended into either, via the same `should_descend` guard init uses --
+    a symlinked file is still counted, only directory descent is guarded.
     """
     found: list[Path] = []
 
@@ -177,9 +183,8 @@ def _walk_pruned(root: Path) -> list[Path]:
             return
         for entry in entries:
             if entry.is_dir():
-                if is_pruned_dir(entry.name):
-                    continue
-                _recurse(entry)
+                if should_descend(entry):
+                    _recurse(entry)
             elif entry.is_file() and entry.suffix.lower() in _SUFFIXES:
                 found.append(entry)
 

@@ -147,6 +147,45 @@ def test_never_proposes_repo_root_when_all_files_sit_at_root(tmp_path: Path) -> 
     assert proposed == {"README.md", "notes.md", "changelog.md"}
 
 
+def test_denylist_prunes_node_modules_several_levels_deep(tmp_path: Path) -> None:
+    # Locks pruning depth, not just presence: a regression that only pruned
+    # the first level would still pass test_denylist_prunes_node_modules.
+    _write(tmp_path / "node_modules" / "a" / "b" / "c" / "deep.md")
+
+    result = detect_paths(tmp_path)
+
+    assert result.proposals == []
+    assert result.refused == []
+
+
+def test_dotted_directory_name_is_not_refused(tmp_path: Path) -> None:
+    # Negative case for hostile-name refusal: an over-broad _SAFE_COMPONENT
+    # regex that started refusing valid dotted names would slip past
+    # test_unrepresentable_directory_name_is_refused, which only checks a
+    # name that *should* be refused.
+    _write(tmp_path / "my-docs.v2" / "guide.md")
+
+    result = detect_paths(tmp_path)
+
+    assert _paths(result) == {"my-docs.v2/"}
+    assert result.refused == []
+
+
+def test_symlinked_directory_is_not_descended(tmp_path: Path) -> None:
+    # linksanity-1fb: a directory symlink (here self-referential) must not be
+    # followed. Unguarded, this loops until the filesystem's ELOOP is caught
+    # by _walk's `except OSError`, but not before re-finding a.md at every
+    # level and inflating file_count far past 1.
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("# a\n")
+    (docs / "loop").symlink_to(docs, target_is_directory=True)
+
+    result = detect_paths(tmp_path)
+
+    assert result.proposals == [Proposal(path="docs/", file_count=1)]
+
+
 def test_results_ranked_by_file_count_descending(tmp_path: Path) -> None:
     _write(tmp_path / "docs" / "a.md")
     _write(tmp_path / "docs" / "b.md")

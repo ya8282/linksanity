@@ -386,6 +386,21 @@ class TestExpandPathsPruning:
 
         assert [p.name for p in paths] == [".hidden.md"]
 
+    def test_symlinked_directory_is_not_descended(self, tmp_path: Path) -> None:
+        # linksanity-1fb: shares init.py's should_descend guard -- a
+        # directory symlink (here self-referential) must not be followed.
+        # Unguarded, this loops until ELOOP is caught by _walk_pruned's
+        # `except OSError`, re-finding a.md at every level first -- a scan
+        # that descends a symlink loop is worse than init's wrong count.
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "a.md").write_text("# a\n")
+        (docs / "loop").symlink_to(docs, target_is_directory=True)
+
+        paths = _expand_paths([str(tmp_path)])
+
+        assert [p.name for p in paths] == ["a.md"]
+
 
 class TestDocbookIdPrescan:
     """_collect_docbook_ids() -- corpus-wide (not per-file) DocBook id collection."""

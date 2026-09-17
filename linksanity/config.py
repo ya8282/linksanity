@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import fnmatch
+import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -205,6 +206,75 @@ def _bool_or_none(data: dict[str, object], key: str, path: Path | None) -> bool 
     return _bool(data, key, False, path)
 
 
+# Every top-level linksanity.toml key load_config actually reads. Keep in
+# sync with the string literals passed to _int/_bool/_str/_string_set/
+# _bool_or_none below -- add a key here whenever one is added there, or it
+# will be reported as unrecognised (linksanity-1lc).
+_CONSUMED_KEYS = frozenset(
+    {
+        "workers",
+        "playwright_workers",
+        "timeout",
+        "retry",
+        "check_anchors",
+        "check_images",
+        "myst",
+        "link_style",
+        "max_pages",
+        "ignore_domains",
+        "js_domains",
+        "skip_urls",
+        "block_analytics",
+        "format",
+        "max_redirects",
+        "cache_file",
+        "cache_ttl",
+        "incremental",
+        "since",
+        "baseline",
+        "annotations",
+        "offline",
+    }
+)
+
+
+def _unconsumed_keys(data: dict[str, object], consumed: frozenset[str]) -> list[str]:
+    """Return dotted-path names for every key in `data` that `load_config`
+    never read.
+
+    A key whose value is a non-empty table is expanded into one entry per
+    leaf key nested inside it (e.g. ``tool.linksanity.workers``) rather than
+    reported once as just ``tool``. load_config only ever reads top-level
+    scalar/list keys, so any table -- most commonly a pyproject-style
+    ``[tool.linksanity]`` section -- is unconsumed in its entirety; naming
+    the actual leaf keys tells the user exactly which settings were ignored
+    instead of just which table.
+    """
+    names: list[str] = []
+    for key, value in data.items():
+        if key in consumed:
+            continue
+        if isinstance(value, dict) and value:
+            names.extend(f"{key}.{nested}" for nested in _unconsumed_keys(value, frozenset()))
+        else:
+            names.append(key)
+    return names
+
+
+def _warn_unconsumed_keys(data: dict[str, object], path: Path) -> None:
+    unconsumed = _unconsumed_keys(data, _CONSUMED_KEYS)
+    if not unconsumed:
+        return
+    names = ", ".join(sorted(unconsumed))
+    print(
+        f"[linksanity] warning: unrecognised config key(s) in {path}: {names} "
+        "-- check the spelling against the Configuration docs; linksanity "
+        "only reads top-level keys, so a [table.name] section (e.g. "
+        "[tool.linksanity]) is ignored",
+        file=sys.stderr,
+    )
+
+
 def load_config(
     toml_path: Path | None = None,
     **overrides: object,
@@ -260,5 +330,8 @@ def load_config(
             setattr(cfg, key, value)
 
     _validate_ranges(cfg, data, overrides, search_path)
+
+    if data:
+        _warn_unconsumed_keys(data, search_path)
 
     return cfg

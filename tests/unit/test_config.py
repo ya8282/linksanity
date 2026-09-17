@@ -1,13 +1,24 @@
 """Tests for config loading and CLI override logic."""
 
 import re
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
 
-from linksanity.config import Config, ConfigError, load_config, url_is_skipped
+from linksanity.config import (
+    _CONSUMED_KEYS,
+    Config,
+    ConfigError,
+    load_config,
+    url_is_skipped,
+)
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
+
+# Config fields that are CLI/report-only and documented as never read from
+# TOML, so _CONSUMED_KEYS deliberately excludes them.
+_NEVER_FROM_TOML = {"output", "report", "github_issue", "github_repo"}
 
 
 class TestConfigDefaults:
@@ -368,6 +379,70 @@ class TestNumericRangeValidation:
             load_config(toml_path=p, workers=-5)
         assert str(p) not in str(exc_info.value)
         assert "got -5" in str(exc_info.value)
+
+
+def test_consumed_keys_matches_the_toml_readable_config_fields() -> None:
+    # _CONSUMED_KEYS mirrors the key literals in load_config's body. Without
+    # this pin, a new field read there but missed here would warn on a valid
+    # key, which is worse than the silent ignore linksanity-1lc fixed.
+    assert {f.name for f in fields(Config)} - _NEVER_FROM_TOML == _CONSUMED_KEYS
+
+
+class TestUnconsumedKeysWarn:
+    """An unrecognised linksanity.toml key must warn on stderr and still
+    exit cleanly with defaults applied elsewhere, never raise (linksanity-1lc)."""
+
+    def test_unknown_top_level_key_warns_and_keeps_defaults(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workesr = 5\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.workers == 5  # default, the misspelled key had no effect
+        err = capsys.readouterr().err
+        assert "workesr" in err
+        assert str(p) in err
+
+    def test_tool_linksanity_table_warns_with_dotted_leaf_path(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("[tool.linksanity]\nworkers = 3\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.workers == 5  # default -- nested under [tool.linksanity], unread
+        err = capsys.readouterr().err
+        assert "tool.linksanity.workers" in err
+
+    def test_valid_config_produces_no_warning(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        load_config(toml_path=FIXTURES / "linksanity.toml")
+        assert capsys.readouterr().err == ""
+
+    def test_multiple_unknown_keys_are_all_named(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workesr = 5\nfoo_bar = 1\n")
+        load_config(toml_path=p)
+        err = capsys.readouterr().err
+        assert "workesr" in err
+        assert "foo_bar" in err
+
+    def test_top_level_valid_key_still_applies_alongside_no_warning(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = 3\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.workers == 3
+        assert capsys.readouterr().err == ""
+
+    def test_no_file_produces_no_warning(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        load_config(toml_path=tmp_path / "nonexistent.toml")
+        assert capsys.readouterr().err == ""
 
 
 class TestUrlIsSkipped:

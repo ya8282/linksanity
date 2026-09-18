@@ -47,7 +47,7 @@ below the table). The rest, with their defaults:
 
 A CLI flag always wins over the same key set in `linksanity.toml` — the file
 supplies defaults, the flag overrides them for that one invocation. See the
-[CLI reference](/guides/cli-reference) for the full per-subcommand flag list
+[CLI reference](./cli-reference.md) for the full per-subcommand flag list
 and which flags exist on which subcommand.
 
 ## Two traps worth knowing before you rely on the file
@@ -60,7 +60,7 @@ the clearest example: it's parsed even when you run `crawl`, but `crawl` has
 no `--check-images` flag and never reads the field, so setting
 `check_images = true` in `linksanity.toml` has no effect on a crawl — no
 warning, no error, just a no-op. Check the [flag compatibility
-matrix](/guides/cli-reference) to know whether a field you set in the file
+matrix](./cli-reference.md) to know whether a field you set in the file
 is actually acted on by the subcommand you're running.
 
 **`output`, `report`, `github_issue`, and `github_repo` are never read from

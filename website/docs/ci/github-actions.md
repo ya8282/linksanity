@@ -3,7 +3,7 @@ title: GitHub Actions
 sidebar_position: 1
 ---
 
-The recommended way to wire this up is [`linksanity init`](/guides/getting-started), which writes a workflow for you after detecting and confirming paths. This page documents the underlying pieces for hand-editing an existing workflow or writing one from scratch.
+The recommended way to wire this up is [`linksanity init`](../guides/getting-started.md), which writes a workflow for you after detecting and confirming paths. This page documents the underlying pieces for hand-editing an existing workflow or writing one from scratch.
 
 There are two ways to run linksanity in GitHub Actions: the composite action, or installing the CLI directly yourself.
 
@@ -148,7 +148,7 @@ permissions:
             --repo ${{ github.repository }}
 ```
 
-See [Issue reporting](/ci/issue-reporting) for what the issue looks like and what permissions it needs.
+See [Issue reporting](./issue-reporting.md) for what the issue looks like and what permissions it needs.
 
 `GITHUB_TOKEN` is always read from the environment — never pass it as a CLI flag or store it in a file.
 
@@ -166,7 +166,7 @@ See [Issue reporting](/ci/issue-reporting) for what the issue looks like and wha
             --output crawl-results.json
 ```
 
-**Maintainer/advanced: generating the crawl-variant workflow** — `scripts/bootstrap_linkcheck.py` writes the *crawl* variant of this workflow into a target repo. It is a maintainer tool that lives in the linksanity repo's `scripts/` directory, not in the published wheel, so it requires cloning the repo to run. [`linksanity init`](/guides/getting-started) is the supported way to set up link checking and does not need a clone, but it only generates the `scan`-based workflow, not this crawl variant. Reach for `bootstrap_linkcheck.py` specifically when you want the crawl variant generated for you:
+**Maintainer/advanced: generating the crawl-variant workflow** — `scripts/bootstrap_linkcheck.py` writes the *crawl* variant of this workflow into a target repo. It is a maintainer tool that lives in the linksanity repo's `scripts/` directory, not in the published wheel, so it requires cloning the repo to run. [`linksanity init`](../guides/getting-started.md) is the supported way to set up link checking and does not need a clone, but it only generates the `scan`-based workflow, not this crawl variant. Reach for `bootstrap_linkcheck.py` specifically when you want the crawl variant generated for you:
 
 ```bash
 # Fully interactive — prompts for URL, schedule, max-pages, etc.

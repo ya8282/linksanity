@@ -57,4 +57,4 @@ Any flag `linksanity scan` accepts can be passed via `args:` — it's appended a
         args: [--check-anchors]
 ```
 
-See the [CLI reference](/guides/cli-reference) for the full flag list.
+See the [CLI reference](../guides/cli-reference.md) for the full flag list.

@@ -51,7 +51,7 @@ All eleven keys are always present — the JSON reporter emits a fixed dict shap
 
 This JSON schema is stable and additive across releases — new keys may be added, but none of the eleven above will be renamed or removed. Build integrations against this contract rather than against any particular reporter.
 
-See [Output Modes](/guides/output-modes) for the full reporter reference, including CSV and Markdown output.
+See [Output Modes](../guides/output-modes.md) for the full reporter reference, including CSV and Markdown output.
 
 ## Repair loop
 
@@ -98,7 +98,7 @@ Two things worth building into an agent that drives `--write`:
 - **Commit first.** `--write` refuses on a dirty tree by design. Don't reach for `--force` to get around that — the guard is what makes the resulting `git diff` reviewable.
 - **Show the diff.** `fix` without `--write` is a safe read-only preview; use it to let a human approve before you write.
 
-See [Fixing broken links](/recipes/fixing-broken-links) for the full fix workflow, including safety guarantees and format support.
+See [Fixing broken links](../recipes/fixing-broken-links.md) for the full fix workflow, including safety guarantees and format support.
 
 ## Python subprocess usage
 

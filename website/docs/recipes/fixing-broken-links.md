@@ -64,7 +64,7 @@ A `fix` exit of `1` is not a failure signal by itself — it just means there wa
 
 ## JSON output: fix proposals
 
-`fix --format json` emits fix proposals, not link results — a different shape from `scan --format json` (see [Output Modes](/guides/output-modes) for that schema):
+`fix --format json` emits fix proposals, not link results — a different shape from `scan --format json` (see [Output Modes](../guides/output-modes.md) for that schema):
 
 ```bash
 linksanity fix ./docs/ --format json --output fixes.json

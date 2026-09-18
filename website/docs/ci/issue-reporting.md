@@ -44,11 +44,11 @@ permissions:
   issues: write
 ```
 
-See [GitHub Actions](/ci/github-actions) for a full workflow step wiring this up on `if: failure()`.
+See [GitHub Actions](./github-actions.md) for a full workflow step wiring this up on `if: failure()`.
 
 ## `--annotations`
 
-Pass `--annotations` (or rely on its default, which auto-detects CI and enables itself inside GitHub Actions) to emit `::error::`/`::warning::` workflow commands for each failing or redirected link, so failures show up inline on the diff view without downloading an artifact. `--no-annotations` disables it explicitly. See the [CLI reference](/guides/cli-reference) for the full flag table.
+Pass `--annotations` (or rely on its default, which auto-detects CI and enables itself inside GitHub Actions) to emit `::error::`/`::warning::` workflow commands for each failing or redirected link, so failures show up inline on the diff view without downloading an artifact. `--no-annotations` disables it explicitly. See the [CLI reference](../guides/cli-reference.md) for the full flag table.
 
 ### Security note: error text and newline injection
 
@@ -56,6 +56,6 @@ A `::error::`/`::warning::` workflow command is just a line of text on stdout wi
 
 As of today, linksanity's own annotations reporter (`linksanity/reporters/github_annotations.py`) does sanitise this correctly: its `_esc` helper escapes `%`, `\r`, and `\n` using GitHub's official workflow-command escape sequences (`%25`, `%0D`, `%0A`) before any error text is written into an annotation line, so a CR/LF embedded in an exception message cannot break out of the line and cannot forge a second annotation. This applies both to the message text and to annotation properties like `file=`, which get the same escaping plus `,`/`:` handling.
 
-The composite action's own annotation step (in `action.yml`, used when running via the [composite action](/ci/github-actions#option-a-the-composite-action) rather than the raw CLI) builds its `::error::` lines with `jq` from the JSON results file and applies the equivalent collapse — `gsub("[\r\n]+"; " ")` — to the URL, source file, and detail fields before formatting the line, for the same reason.
+The composite action's own annotation step (in `action.yml`, used when running via the [composite action](./github-actions.md#option-a-the-composite-action) rather than the raw CLI) builds its `::error::` lines with `jq` from the JSON results file and applies the equivalent collapse — `gsub("[\r\n]+"; " ")` — to the URL, source file, and detail fields before formatting the line, for the same reason.
 
 Both are sanitised as of this writing. If you find a code path that formats result text into a GitHub Actions annotation or shell command without collapsing `\r`/`\n` first, treat it as a security bug, not a cosmetic one.

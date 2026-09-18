@@ -15,3 +15,6 @@ pydantic https://github.com/pydantic/pydantic.git docs
 typer https://github.com/fastapi/typer.git docs
 requests https://github.com/psf/requests.git docs
 rich https://github.com/Textualize/rich.git docs
+
+# Dogfood target: linksanity's own self-hosted docs site (built by deploy-docs.yml), not a git-clone target — crawl the live URL instead.
+linksanity-docs https://ya8282.github.io/linksanity/

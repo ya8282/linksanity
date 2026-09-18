@@ -7,7 +7,7 @@ sidebar_position: 3
 
 The four subcommands share most flags but not all of them. Passing a flag to a
 subcommand that doesn't define it exits `2` with `No such option`. `init` has
-its own flag set (see [Setup: `linksanity init`](/guides/getting-started))
+its own flag set (see [Setup: `linksanity init`](./getting-started.md))
 and isn't part of the shared `scan`/`fix`/`crawl` matrix below.
 
 | Flag | `scan` | `fix` | `crawl` |
@@ -49,7 +49,7 @@ doesn't parse them from the file, so they can only be set via CLI flag,
 regardless of subcommand. Because they're never consumed, linksanity also
 reports them on stderr as unrecognised config keys; that warning is expected
 for these four and not a sign anything is wrong. See
-[Configuration](/guides/configuration) for the full detail on both of these
+[Configuration](./configuration.md) for the full detail on both of these
 traps.
 
 ## `linksanity scan <paths...>`
@@ -113,7 +113,7 @@ group, plus:
 ## `linksanity init`
 
 Does not share flags with `scan`/`fix`/`crawl`. See
-[Setup: `linksanity init`](/guides/getting-started) for the full
+[Setup: `linksanity init`](./getting-started.md) for the full
 walkthrough.
 
 | Flag | Default | Description |

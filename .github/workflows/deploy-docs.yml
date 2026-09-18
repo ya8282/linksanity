@@ -44,6 +44,24 @@ jobs:
       - name: Build
         run: npm run build
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install linksanity
+        working-directory: ${{ github.workspace }}
+        run: pip install -e .
+
+      - name: Docs link check
+        working-directory: ${{ github.workspace }}
+        # --offline: this job runs on every push/PR touching website/**, and live
+        # HTTP checks against external hosts (github.com, pre-commit.com, ...) would
+        # make routine docs edits flaky/slow without catching what this PR itself
+        # could have broken. --offline still validates every internal link and
+        # #anchor within the docs tree, which is the actual regression this step
+        # guards against.
+        run: linksanity scan website/docs --check-anchors --offline
+
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: website/build

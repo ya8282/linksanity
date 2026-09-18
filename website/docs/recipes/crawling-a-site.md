@@ -3,7 +3,7 @@ title: Crawling a Site
 sidebar_position: 2
 ---
 
-`linksanity crawl` checks links on a **deployed** site by following its pages with a headless browser, rather than parsing local source files. Use it to test a site after it's built and published — [Scanning Local Files](/recipes/scanning-local-files) covers checking the source instead.
+`linksanity crawl` checks links on a **deployed** site by following its pages with a headless browser, rather than parsing local source files. Use it to test a site after it's built and published — [Scanning Local Files](./scanning-local-files.md) covers checking the source instead.
 
 ## Prerequisite: Playwright
 
@@ -14,7 +14,7 @@ pip install "linksanity[browser]"
 playwright install chromium
 ```
 
-Missing it exits `2` with a message telling you to install it before continuing. See [Installation](/guides/installation) for the full setup, including the from-source variant.
+Missing it exits `2` with a message telling you to install it before continuing. See [Installation](../guides/installation.md) for the full setup, including the from-source variant.
 
 ## Crawl a live site
 
@@ -53,7 +53,7 @@ echo "internal.corp.example.com" > ignore.txt
 linksanity crawl https://docs.example.com --ignore-domains ignore.txt
 ```
 
-Takes a file, one domain per line — see [Excluding Links](/recipes/excluding-links) for the file format and matching rules, which are shared with `scan`.
+Takes a file, one domain per line — see [Excluding Links](./excluding-links.md) for the file format and matching rules, which are shared with `scan`.
 
 ## `--max-redirects`
 

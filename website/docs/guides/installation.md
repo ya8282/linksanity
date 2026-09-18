@@ -16,7 +16,7 @@ playwright install chromium
 
 Requires Python 3.11+.
 
-The browser install is only needed for [crawl mode](/guides/getting-started) or scan with `js_domains` set (via the `--js-domains` flag or `linksanity.toml`) — a plain `linksanity scan` does not launch a browser.
+The browser install is only needed for [crawl mode](./getting-started.md) or scan with `js_domains` set (via the `--js-domains` flag or `linksanity.toml`) — a plain `linksanity scan` does not launch a browser.
 
 **From source:**
 

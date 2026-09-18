@@ -68,7 +68,7 @@ Each item in the output array has:
 | `redirect_chain` | Every URL in the chain, original first; `null` unless an HTTP redirect response was actually received, and also `null` in the rare case where a hop's status code couldn't be determined (chain and codes are always `null` together, never one without the other, so a code is never guessed). A URL that differs only by normalization (host case, scheme case, dot-segments) with no real redirect reports `status: "ok"`, not `"redirect"` |
 | `redirect_codes` | The status code of each hop, one per hop. Note the lengths differ: `redirect_chain` holds N+1 entries (every hop plus the final URL) while `redirect_codes` holds N, so do not zip them naively. All 301/308 means permanently moved and safe to rewrite. `null` whenever `redirect_chain` is `null`, for the same reasons |
 
-`linksanity fix --format json` emits a different schema — fix proposals rather than link results. See the [CLI reference](/guides/cli-reference) for the `fix` flag table, and [Fixing broken links](/recipes/fixing-broken-links) for the proposal fields and the repair loop.
+`linksanity fix --format json` emits a different schema — fix proposals rather than link results. See the [CLI reference](./cli-reference.md) for the `fix` flag table, and [Fixing broken links](../recipes/fixing-broken-links.md) for the proposal fields and the repair loop.
 
 ## Exit codes
 

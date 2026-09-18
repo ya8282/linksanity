@@ -49,7 +49,7 @@ echo "linkedin.com" >> ignore.txt
 linksanity scan ./docs/ --ignore-domains ignore.txt
 ```
 
-If you only want to skip specific pages on a host rather than the whole domain, use `--skip-urls` instead — see [Excluding Links](/recipes/excluding-links).
+If you only want to skip specific pages on a host rather than the whole domain, use `--skip-urls` instead — see [Excluding Links](./recipes/excluding-links.md).
 
 ## Passing `--config` with a path that doesn't exist
 
@@ -61,7 +61,7 @@ If you only want to skip specific pages on a host rather than the whole domain, 
 
 Exits with status `2` before doing anything else — no scan is attempted.
 
-**Cause:** an explicit `--config` path is authoritative; unlike the no-flag case (which searches upward from the current directory for the nearest `linksanity.toml`, stopping at the repository root, see [Configuration](/guides/configuration)), a `--config` value that doesn't resolve to a real file is treated as an error, not a signal to fall back to defaults.
+**Cause:** an explicit `--config` path is authoritative; unlike the no-flag case (which searches upward from the current directory for the nearest `linksanity.toml`, stopping at the repository root, see [Configuration](./guides/configuration.md)), a `--config` value that doesn't resolve to a real file is treated as an error, not a signal to fall back to defaults.
 
 **Fix:** check for a typo'd path, and check where you're running the command from — a relative `--config` path resolves against the shell's working directory when the command runs, not the directory holding the file you're scanning. Pass an absolute path, or `cd` into the directory that holds `linksanity.toml` first.
 
@@ -77,7 +77,7 @@ Exits with status `2` before doing anything else — no scan is attempted.
 
 **Cause:** unlike a missing `--config` path, this `linksanity.toml` was found but failed validation — malformed syntax (shown above), a wrong-type value (e.g. `ignore_domains = "example.com"` where a list is needed), an unparsable integer, or an out-of-range value like `workers = -5` (must be `>= 1`). Per-key errors name the key; a bad file (malformed, non-UTF-8, unreadable) names the file instead. A range error can also fire from a flag with no config file, e.g. `--workers -5`, which omits the `in <path>` suffix.
 
-**Fix:** for a syntax error, go to the line and column the message gives. For a rejected value, check the key's expected type and minimum in [Configuration](/guides/configuration). For `is not valid UTF-8`, re-save as UTF-8; for `cannot read`, check the file's permissions.
+**Fix:** for a syntax error, go to the line and column the message gives. For a rejected value, check the key's expected type and minimum in [Configuration](./guides/configuration.md). For `is not valid UTF-8`, re-save as UTF-8; for `cannot read`, check the file's permissions.
 
 ## `crawl` exits immediately with "Playwright is required"
 
@@ -97,7 +97,7 @@ pip install "linksanity[browser]"
 playwright install chromium
 ```
 
-See [Installation](/guides/installation) for the from-source variant.
+See [Installation](./guides/installation.md) for the from-source variant.
 
 ## Running out of file descriptors under high `--workers`
 
@@ -119,7 +119,7 @@ If you need the higher concurrency, raise the shell's open-file limit instead (`
 
 **Cause:** after `--max-redirects` hops (default 10) without settling on a final response, httpx raises `TooManyRedirects`, which linksanity reports as its own `too_many_redirects` status — a failing status distinct from `broken`.
 
-This has a sharp edge in CI: the GitHub Action's `::error::` annotation step only looks at `status == "broken"` or `status == "error"` results, but the job's exit code also fails on `too_many_redirects`. A run whose only failures are redirect loops fails the job with zero annotations explaining why — you have to open the uploaded JSON artifact to find them. See [GitHub Actions](/ci/github-actions) for the full writeup.
+This has a sharp edge in CI: the GitHub Action's `::error::` annotation step only looks at `status == "broken"` or `status == "error"` results, but the job's exit code also fails on `too_many_redirects`. A run whose only failures are redirect loops fails the job with zero annotations explaining why — you have to open the uploaded JSON artifact to find them. See [GitHub Actions](./ci/github-actions.md) for the full writeup.
 
 **Fix:** if the chain is long but does eventually resolve, raise the cap:
 
@@ -141,4 +141,4 @@ If it's a genuine redirect loop, fix the source link instead — raising `--max-
 linksanity scan ./docs/ --link-style docusaurus
 ```
 
-See [Configuration](/guides/configuration) for the other `--link-style` presets and where this can live in `linksanity.toml` instead of on the command line.
+See [Configuration](./guides/configuration.md) for the other `--link-style` presets and where this can live in `linksanity.toml` instead of on the command line.

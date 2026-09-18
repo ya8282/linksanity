@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import datetime
 import fnmatch
+import math
 import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import NoReturn, cast
 
 
 @dataclass
@@ -115,13 +116,17 @@ def _type_name(v: object) -> str:
     return type(v).__name__
 
 
+def _raise_type_error(key: str, path: Path | None, expected: str, actual: str) -> NoReturn:
+    raise ConfigError(
+        f"invalid value for '{key}'{_error_suffix(path)}: expected {expected}, got {actual}"
+    )
+
+
 def _check_type(
     v: object, key: str, path: Path | None, types: tuple[type, ...], expected: str
 ) -> None:
     if not isinstance(v, types):
-        raise ConfigError(
-            f"invalid value for '{key}'{_error_suffix(path)}: expected {expected}, got {_type_name(v)}"
-        )
+        _raise_type_error(key, path, expected, _type_name(v))
 
 
 def _int(data: dict[str, object], key: str, default: int, path: Path | None) -> int:
@@ -133,10 +138,24 @@ def _int(data: dict[str, object], key: str, default: int, path: Path | None) -> 
     # Reject it explicitly, ahead of the (int, float, str) gate, so every
     # integer key gets the same clear ConfigError a wrong type would produce.
     if isinstance(v, bool):
-        raise ConfigError(
-            f"invalid value for '{key}'{_error_suffix(path)}: expected an integer, got {_type_name(v)}"
-        )
+        _raise_type_error(key, path, "an integer", _type_name(v))
     _check_type(v, key, path, (int, float, str), "an integer")
+    if isinstance(v, float):
+        # NaN/inf would otherwise reach int() below, which does raise on
+        # them (ValueError / OverflowError) rather than crash -- but check
+        # explicitly so the non-integral-float check below (v != int(v))
+        # never has to evaluate int() on a NaN itself.
+        if math.isnan(v) or math.isinf(v):
+            raise ConfigError(
+                f"invalid value for '{key}'{_error_suffix(path)}: {v!r} is not a valid integer"
+            )
+        if v != int(v):
+            # Truncating toward zero here would silently turn 2.5 into 2 --
+            # report the value the user actually wrote instead.
+            raise ConfigError(
+                f"invalid value for '{key}'{_error_suffix(path)}: "
+                f"{v!r} is not a whole number"
+            )
     try:
         return int(cast("int | float | str", v))
     except (ValueError, OverflowError) as exc:

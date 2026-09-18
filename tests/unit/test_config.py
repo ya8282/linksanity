@@ -355,6 +355,47 @@ class TestAcceptedCoercionsStillWork:
         assert cfg.check_anchors is True
 
 
+class TestNonIntegralFloatRejected:
+    """int() truncates toward zero, so workers = 2.5 would otherwise load
+    silently as 2 -- and workers = 0.5 would truncate to 0 and then trip the
+    range floor with a message ("got 0") naming a value the user never
+    wrote (linksanity-uzv). Reject a non-integral float outright, naming
+    the value actually written."""
+
+    def test_non_integral_float_rejected_with_original_value(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = 2.5\n")
+        with pytest.raises(ConfigError, match=r"workers.*2\.5"):
+            load_config(toml_path=p)
+
+    def test_non_integral_float_below_floor_names_the_float_not_the_truncation(
+        self, tmp_path: Path
+    ) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = 0.5\n")
+        with pytest.raises(ConfigError, match=r"workers.*0\.5") as exc_info:
+            load_config(toml_path=p)
+        assert "got 0" not in str(exc_info.value)
+
+    def test_integral_float_still_accepted(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = 2.0\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.workers == 2
+
+    def test_bool_still_rejected_alongside_float_handling(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = true\n")
+        with pytest.raises(ConfigError, match=r"workers.*expected an integer.*got bool"):
+            load_config(toml_path=p)
+
+    def test_negative_float_still_rejected_sensibly(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("cache_ttl = -1.0\n")
+        with pytest.raises(ConfigError, match=r"cache_ttl"):
+            load_config(toml_path=p)
+
+
 class TestNumericRangeValidation:
     """A negative or zero value for a numeric key must raise ConfigError at
     load time instead of surfacing as a traceback deep in the run (e.g.

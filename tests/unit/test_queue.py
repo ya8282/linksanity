@@ -103,6 +103,20 @@ class TestLinkQueue:
         assert q.add("docbook-xref:install-step", "b/page.dbk", 9, LinkType.INTERNAL) is False
         assert len(q.pending()) == 1
 
+    def test_sources_for_result_rejects_unissued_triple(self) -> None:
+        # A LinkResult whose (url, source_file, line) does not match any
+        # representative this queue's add() recorded -- e.g. built by hand
+        # outside the add()/pending() pipeline -- must not silently fall
+        # back to sources(url) (see linksanity-rml); it's a caller bug.
+        q = LinkQueue()
+        q.add("https://a.com", "a.md", 1, LinkType.EXTERNAL)
+        with pytest.raises(ValueError) as exc_info:
+            q.sources_for_result("https://never-added.com", "ghost.md", 99)
+        message = str(exc_info.value)
+        assert "https://never-added.com" in message
+        assert "ghost.md" in message
+        assert "99" in message
+
 
 class TestLinkResultCell:
     def test_cell_defaults_to_none(self) -> None:

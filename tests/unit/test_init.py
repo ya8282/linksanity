@@ -133,6 +133,21 @@ def test_unrepresentable_directory_name_is_refused(tmp_path: Path) -> None:
     assert result.refused[0].reason
 
 
+def test_unrepresentable_directory_name_names_offending_character(
+    tmp_path: Path,
+) -> None:
+    # linksanity-khu: the catch-all used to recite a fixed, wrong list
+    # ("whitespace, #, or a quote") for characters like '{' that aren't any
+    # of those. It must name the actual character it found instead.
+    _write(tmp_path / "my{docs}" / "guide.md")
+
+    result = detect_paths(tmp_path)
+
+    assert _paths(result) == set()
+    assert len(result.refused) == 1
+    assert "'{'" in result.refused[0].reason
+
+
 def test_never_proposes_repo_root_when_all_files_sit_at_root(tmp_path: Path) -> None:
     _write(tmp_path / "README.md")
     _write(tmp_path / "notes.md")
@@ -801,6 +816,30 @@ def test_init_cli_paths_rejects_glob_with_glob_specific_message(
     assert result.exit_code == 2
     assert "glob" in result.stderr
     assert "literal" in result.stderr
+    assert not Path(".github").exists()
+
+
+@pytest.mark.parametrize(
+    "bad_path,offending_repr",
+    [("docs/{a,b}.md", "'{'"), ("my docs", "' '")],
+)
+def test_init_cli_paths_rejects_catch_all_names_offending_character(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    bad_path: str,
+    offending_repr: str,
+) -> None:
+    """linksanity-khu: the catch-all message must name the character it
+    actually found (rendered via repr() so a space reads as `' '` rather
+    than an invisible blank), not recite the old fixed, wrong list."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+
+    result = runner.invoke(app, ["init", "--yes", "--paths", bad_path])
+
+    assert result.exit_code == 2
+    assert offending_repr in result.stderr
+    assert "whitespace, #, or a quote" not in result.stderr
     assert not Path(".github").exists()
 
 

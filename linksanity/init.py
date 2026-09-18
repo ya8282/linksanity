@@ -38,7 +38,9 @@ _PROSE_SUFFIXES = {".md", ".rst", ".adoc", ".mdx"}
 _HTML_SUFFIXES = {".html", ".htm"}
 
 # action.yml leaves $PATHS unquoted so it word-splits into argv entries; a
-# component must contain no whitespace, "#", "*", or quotes, and must not
+# component may contain only letters, digits, ".", "_", "/", and "-" --
+# anything else (whitespace, quotes, "#", shell metacharacters like "$",
+# "(", "{", etc.) would corrupt the unquoted paths: value -- and must not
 # start with "-" (which would word-split into a flag).
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9._/-]+$")
 
@@ -149,7 +151,13 @@ def _refusal_reason(name: str) -> str:
         return "starts with '-', which would word-split into a flag in the unquoted paths: value"
     if any(ch in name for ch in "*?[]!+"):
         return "contains a glob-pattern character (*, ?, [, ], !, or +); --paths takes literal directory or file paths, not glob patterns -- pass the containing directory instead"
-    return "contains a character unsafe for the unquoted paths: word-split (whitespace, #, or a quote)"
+    # Name whichever character actually tripped _SAFE_COMPONENT (repr() renders
+    # it legibly even when it's whitespace or a quote) rather than reciting a
+    # fixed, incomplete list of "unsafe" characters.
+    offending = next((ch for ch in name if not _SAFE_COMPONENT.match(ch)), None)
+    if offending is None:
+        return "contains a character unsafe for the unquoted paths: word-split (whitespace, #, or a quote)"
+    return f"contains {offending!r}, which is unsafe for the unquoted paths: value -- it would word-split or otherwise corrupt the line"
 
 
 def _classify(name: str, file_count: int) -> Proposal | RefusedPath:

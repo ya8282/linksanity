@@ -128,7 +128,14 @@ def build_moved_file_proposals(
         basename = Path(path_part).name
         suffix = f"#{fragment}" if fragment else ""
 
-        for source_file, line in queue.sources(r.url):
+        # Not queue.sources(r.url): the same URL string can produce more than
+        # one BROKEN result now that resolution is source-dependent (see
+        # queue._dedupe_key), and walking every source of the URL for each
+        # such result would propose the same fix once per result -- a
+        # duplicate per extra directory the URL also appears broken in.
+        # sources_for_result narrows to just the occurrences this particular
+        # result speaks for.
+        for source_file, line in queue.sources_for_result(r.url, r.source_file, r.line):
             source_dir = Path(source_file).parent
             # If the target resolves from this source, the link broke for some
             # other reason (a missing anchor) — the file has not moved.

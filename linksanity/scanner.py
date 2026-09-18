@@ -57,12 +57,13 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
     docbook_ids = _collect_docbook_ids(paths)
 
     for path in paths:
+        path_root = root_by_source.get(str(path))
         if path.suffix.lower() == ".ipynb":
-            notebook.extract_links(path, queue)
+            notebook.extract_links(path, queue, root=path_root)
             continue
         for url, line in _parse(path, config.check_images, config.myst):
             link_type = classify(url)
-            queue.add(url, str(path), line, link_type)
+            queue.add(url, str(path), line, link_type, root=path_root)
 
     http_sem = asyncio.Semaphore(config.workers)
     pw_sem = asyncio.Semaphore(config.playwright_workers)

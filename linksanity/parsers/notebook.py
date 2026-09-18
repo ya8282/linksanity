@@ -21,7 +21,7 @@ from linksanity.queue import LinkQueue
 from linksanity.router import classify
 
 
-def extract_links(path: Path, queue: LinkQueue) -> None:
+def extract_links(path: Path, queue: LinkQueue, *, root: str | Path | None = None) -> None:
     """Scan a notebook's markdown cells for links and register them on queue.
 
     Each markdown cell's source is run through parse_markdown_string()
@@ -29,6 +29,11 @@ def extract_links(path: Path, queue: LinkQueue) -> None:
     Links are registered via queue.add(url, str(path), line, link_type,
     cell=cell_index) with a 1-based cell index (position in the notebook's
     top-level cells list). Code cells are skipped entirely.
+
+    `root` is the scan root a root-relative link ("/x.md") resolves
+    against, passed through to queue.add() so its dedupe key matches
+    dispatch-time resolution (see queue._dedupe_key); omitted, it falls
+    back to the source file's own parent directory, same as elsewhere.
 
     Malformed JSON or a notebook missing the top-level "cells" list emits a
     warning and adds nothing to the queue. Individual malformed cells are
@@ -72,4 +77,4 @@ def extract_links(path: Path, queue: LinkQueue) -> None:
             continue
 
         for url, line in links:
-            queue.add(url, str(path), line, classify(url), cell=cell_index)
+            queue.add(url, str(path), line, classify(url), cell=cell_index, root=root)

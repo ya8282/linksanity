@@ -583,3 +583,104 @@ class TestDocbookIdPrescan:
         assert mock_dispatch.await_count == 1
         _, kwargs = mock_dispatch.await_args
         assert kwargs["docbook_ids"] == {"install-step"}
+
+
+class TestSourceDependentDedupe:
+    """linksanity-rml: LinkQueue must not dedupe a link across two files whose
+    resolution depends on the source file (relative paths, root-relative
+    paths, pure anchors), while still deduping links whose resolution does
+    not (external http(s) URLs)."""
+
+    @pytest.mark.asyncio
+    async def test_same_relative_link_two_directories_one_broken(
+        self, tmp_path: Path
+    ) -> None:
+        # a/ has ./target.md, which exists; b/ has the same relative link
+        # text, but its target.md is missing.
+        a_dir = tmp_path / "a"
+        a_dir.mkdir()
+        (a_dir / "target.md").write_text("# target\n")
+        (a_dir / "page.md").write_text("[link](./target.md)\n")
+
+        b_dir = tmp_path / "b"
+        b_dir.mkdir()
+        (b_dir / "page.md").write_text("[link](./target.md)\n")
+
+        config = Config(offline=True)
+
+        queue_ab = await run_scan([str(a_dir), str(b_dir)], config)
+        assert queue_ab.summary()["broken"] == 1
+        assert queue_ab.summary()["ok"] == 1
+
+        # Order-independent: the same result regardless of argv order.
+        queue_ba = await run_scan([str(b_dir), str(a_dir)], config)
+        assert queue_ba.summary()["broken"] == 1
+        assert queue_ba.summary()["ok"] == 1
+
+    @pytest.mark.asyncio
+    async def test_same_root_relative_link_two_pattern_roots(
+        self, tmp_path: Path
+    ) -> None:
+        # linksanity-ham repro: /shared.md exists at A's root, missing at B's.
+        # Each directory pattern roots at itself (_pattern_root), so
+        # A/docs/shared.md is what "/shared.md" resolves against for a page
+        # under the A/docs pattern.
+        a_docs = tmp_path / "A" / "docs"
+        a_docs.mkdir(parents=True)
+        (a_docs / "shared.md").write_text("# shared\n")
+        (a_docs / "page.md").write_text("[link](/shared.md)\n")
+
+        b_docs = tmp_path / "B" / "docs"
+        b_docs.mkdir(parents=True)
+        (b_docs / "page.md").write_text("[link](/shared.md)\n")
+
+        config = Config(offline=True)
+
+        queue_ab = await run_scan([str(a_docs), str(b_docs)], config)
+        assert queue_ab.summary()["broken"] == 1
+        assert queue_ab.summary()["ok"] == 1
+
+        queue_ba = await run_scan([str(b_docs), str(a_docs)], config)
+        assert queue_ba.summary()["broken"] == 1
+        assert queue_ba.summary()["ok"] == 1
+
+    @pytest.mark.asyncio
+    async def test_same_pure_anchor_two_files_one_missing(self, tmp_path: Path) -> None:
+        # Both files reference "#section". Only the first defines that heading.
+        has_anchor = tmp_path / "has_anchor.md"
+        has_anchor.write_text("# Section\n\n[self](#section)\n")
+
+        missing_anchor = tmp_path / "missing_anchor.md"
+        missing_anchor.write_text("# Other\n\n[self](#section)\n")
+
+        config = Config(offline=True, check_anchors=True)
+
+        queue = await run_scan([str(has_anchor), str(missing_anchor)], config)
+        assert queue.summary()["broken"] == 1
+        assert queue.summary()["ok"] == 1
+
+        broken = [r for r in queue.results() if r.status == LinkStatus.BROKEN]
+        assert [r.source_file for r in broken] == [str(missing_anchor)]
+
+    @pytest.mark.asyncio
+    async def test_external_url_repeated_across_files_still_deduped(
+        self, tmp_path: Path
+    ) -> None:
+        # External http(s) resolution never depends on the source file --
+        # dedupe must survive here: one dispatch, one result, for N occurrences.
+        n_files = 5
+        for i in range(n_files):
+            (tmp_path / f"page{i}.md").write_text(
+                "[link](https://example.com/shared)\n"
+            )
+
+        config = Config(offline=True)
+
+        with patch(
+            "linksanity.scanner.dispatch", new=_mock_dispatch()
+        ) as mock_dispatch:
+            queue = await run_scan([str(tmp_path)], config)
+
+        assert mock_dispatch.await_count == 1
+        assert len(queue.results()) == 1
+        assert len(queue.sources("https://example.com/shared")) == n_files

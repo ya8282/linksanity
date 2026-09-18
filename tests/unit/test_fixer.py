@@ -317,6 +317,82 @@ class TestMovedFileProposals:
         q = _queue(("docs/a.md", 1), url=url)
         assert build_moved_file_proposals([_broken_internal(url)], q, [target]) == []
 
+    def test_same_url_broken_in_two_directories_is_not_duplicated(
+        self, tmp_path: Path
+    ) -> None:
+        """Regression for linksanity-rml.
+
+        The same relative URL text ("./target.md") is broken in two
+        directories. Source-dependent dedupe (queue._dedupe_key) gives each
+        directory its own BROKEN result, both carrying the identical url
+        string -- so a source loop keyed on the URL alone (queue.sources)
+        re-walks BOTH directories' occurrences for EACH result, producing
+        one duplicate proposal per extra directory. Must yield exactly one
+        proposal per directory instead.
+        """
+        b_dir, c_dir, real_dir = tmp_path / "b", tmp_path / "c", tmp_path / "real"
+        for d in (b_dir, c_dir, real_dir):
+            d.mkdir()
+        b_source, c_source = b_dir / "source.md", c_dir / "source.md"
+        b_source.write_text("x", encoding="utf-8")
+        c_source.write_text("x", encoding="utf-8")
+        target = real_dir / "target.md"
+        target.write_text("x", encoding="utf-8")
+
+        url = "./target.md"
+        q = LinkQueue()
+        q.add(url, str(b_source), 1, LinkType.INTERNAL)
+        q.add(url, str(c_source), 1, LinkType.INTERNAL)
+
+        # Two distinct dedupe keys (different source directories) -> two
+        # pending() entries, each the representative for its own directory.
+        results = [
+            LinkResult(
+                source_file=src,
+                line=line,
+                url=result_url,
+                link_type=lt,
+                status=LinkStatus.BROKEN,
+                error="file not found",
+                cell=cell,
+            )
+            for result_url, src, line, lt, cell in q.pending()
+        ]
+        assert len(results) == 2  # sanity: the setup really produces two results
+
+        proposals = build_moved_file_proposals(results, q, [target, b_source, c_source])
+        assert len(proposals) == 2
+        assert {p.source_file for p in proposals} == {str(b_source), str(c_source)}
+        assert {p.line for p in proposals} == {1}
+
+    def test_multiple_occurrences_in_the_same_file_are_not_dropped(
+        self, tmp_path: Path
+    ) -> None:
+        """The fix for the duplication regression above must not overcorrect
+        into dropping a second broken occurrence of the same URL text in the
+        same file (opposite failure: both occurrences share one dedupe key,
+        both still need their own proposal)."""
+        (tmp_path / "real").mkdir()
+        source = tmp_path / "a.md"
+        source.write_text("x", encoding="utf-8")
+        target = tmp_path / "real" / "target.md"
+        target.write_text("x", encoding="utf-8")
+
+        url = "./target.md"  # does not exist next to source -> basename match
+        q = LinkQueue()
+        q.add(url, str(source), 1, LinkType.INTERNAL)
+        q.add(url, str(source), 2, LinkType.INTERNAL)
+
+        [(result_url, src, line, lt, cell)] = q.pending()  # one dedupe key
+        result = LinkResult(
+            source_file=src, line=line, url=result_url, link_type=lt,
+            status=LinkStatus.BROKEN, error="file not found", cell=cell,
+        )
+
+        proposals = build_moved_file_proposals([result], q, [target, source])
+        assert len(proposals) == 2
+        assert {p.line for p in proposals} == {1, 2}
+
     def test_non_rewritable_source_is_suggestion_only(self, tmp_path: Path) -> None:
         target = tmp_path / "setup.md"
         target.write_text("x", encoding="utf-8")

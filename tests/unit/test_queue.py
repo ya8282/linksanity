@@ -93,6 +93,16 @@ class TestLinkQueue:
         q = LinkQueue()
         assert q.sources("https://never-added.com") == []
 
+    def test_docbook_xref_dedupes_across_source_directories(self) -> None:
+        # docbook-xref: sentinels are id lookups against the corpus-wide id
+        # set -- filesystem.check short-circuits on them before any path
+        # resolution, so unlike a real INTERNAL link they must not fall into
+        # the source-dependent dedupe branch (linksanity-rml).
+        q = LinkQueue()
+        assert q.add("docbook-xref:install-step", "a/page.dbk", 1, LinkType.INTERNAL) is True
+        assert q.add("docbook-xref:install-step", "b/page.dbk", 9, LinkType.INTERNAL) is False
+        assert len(q.pending()) == 1
+
 
 class TestLinkResultCell:
     def test_cell_defaults_to_none(self) -> None:

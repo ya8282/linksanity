@@ -31,8 +31,8 @@ jobs:
       - name: Type check
         run: mypy linksanity/
 
-      - name: Test (unit only, no browser)
-        run: pytest tests/unit/ -x -q --no-cov
+      - name: Test (full suite, no browser)
+        run: pytest -x -q
 
   test-browser:
     runs-on: ubuntu-latest

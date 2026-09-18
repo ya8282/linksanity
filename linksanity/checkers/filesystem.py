@@ -214,8 +214,9 @@ def _rst_anchors(content: str) -> set[str]:
         )
         # Walk every Element node — titles, sections, and targets all carry ids
         from docutils.nodes import Element
+        no_ids: list[str] = []
         for node in doc.findall(Element):
-            for id_ in node.get("ids", []):
+            for id_ in node.get("ids", no_ids):
                 if isinstance(id_, str):
                     anchors.add(id_)
     except Exception:  # noqa: BLE001

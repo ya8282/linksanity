@@ -119,7 +119,7 @@ If you need the higher concurrency, raise the shell's open-file limit instead (`
 
 **Cause:** after `--max-redirects` hops (default 10) without settling on a final response, httpx raises `TooManyRedirects`, which linksanity reports as its own `too_many_redirects` status — a failing status distinct from `broken`.
 
-This has a sharp edge in CI: the GitHub Action's `::error::` annotation step only looks at `status == "broken"` or `status == "error"` results, but the job's exit code also fails on `too_many_redirects`. A run whose only failures are redirect loops fails the job with zero annotations explaining why — you have to open the uploaded JSON artifact to find them. See [GitHub Actions](./ci/github-actions.md) for the full writeup.
+In CI, the GitHub Action's `fail-on-redirect-loop` input (default `true`) controls whether this counts as a failure: by default, `too_many_redirects` results are included in both `broken-count` and the `::error::` annotations, so a redirect-loop failure is explained in the job log. Set `fail-on-redirect-loop: false` to opt redirect loops out of `broken-count` and the job's pass/fail decision entirely — they're then surfaced only as a `::warning::` (exposed via the action's `warnings` output) instead of failing the job. See [GitHub Actions](./ci/github-actions.md) for the full input/output table.
 
 **Fix:** if the chain is long but does eventually resolve, raise the cap:
 

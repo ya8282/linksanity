@@ -40,6 +40,7 @@ jobs:
 | `upload-results` | Whether to upload the scan results file as a workflow artifact (`"true"`/`"false"`). | `true` |
 | `artifact-name` | Name of the workflow artifact to upload the scan results as. Set a distinct value per job when a workflow calls this action more than once, since `upload-artifact` rejects duplicate names within a run. | `linksanity-results` |
 | `browser` | Whether to install the Playwright browser extra, required for `--js-domains` (`"true"`/`"false"`). Adds a Chromium download to the run. | `false` |
+| `fail-on-redirect-loop` | Whether a redirect loop (`too_many_redirects`) counts toward `broken-count` and fails the job (`"true"`/`"false"`). When set to `"false"`, redirect-loop links are excluded from `broken-count` and are instead surfaced as a `::warning::` annotation (see the `warnings` output) rather than failing the job. | `true` |
 
 `--js-domains` passed via `args` requires `browser: true`; otherwise the action fails fast with a clear error instead of installing Playwright unconditionally on every run.
 
@@ -51,6 +52,8 @@ jobs:
 | --- | --- |
 | `broken-count` | Number of links found by the scan with a failing status (`broken`, `error`, or `too_many_redirects` — a redirect loop counts as a failure even though it isn't literally "broken"). |
 | `results-file` | Path to the JSON results file written by the scan. |
+| `annotations` | The literal `::error::` annotation lines the action printed for failing links (empty when there were none). A caller can read this output to inspect or re-emit the exact annotation text instead of re-parsing the results file. |
+| `warnings` | The literal `::warning::` annotation lines the action printed for redirect-loop links when `fail-on-redirect-loop` is `"false"` (empty when there were none). Same purpose as `annotations`, for the warning-only path. |
 
 ### Full usage
 

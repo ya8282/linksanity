@@ -69,5 +69,9 @@ jobs:
       - name: Install dependencies
         run: pip install -e .
 
+      # TEMPORARY: ignore ya8282.github.io until GitHub Pages is enabled for
+      # this repo (linksanity-b54.11). The docs site returns 404 until then,
+      # which would otherwise fail every run. Remove --ignore-domains once
+      # the site resolves.
       - name: Dogfood linkcheck
-        run: linksanity scan README.md CONTRIBUTING.md
+        run: linksanity scan README.md CONTRIBUTING.md --ignore-domains .github/ci-linkcheck-ignore-domains.txt

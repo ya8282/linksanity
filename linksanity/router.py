@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Set as AbstractSet
+from pathlib import Path
 from urllib.parse import urlparse
 
 from linksanity.checkers import filesystem, http
@@ -48,6 +49,7 @@ async def dispatch(
     *,
     cell: int | None = None,
     docbook_ids: AbstractSet[str] = frozenset(),
+    root: Path | None = None,
 ) -> LinkResult:
     """Route a link to the correct checker and return its result."""
     if link_type == LinkType.NON_HTTP_SCHEME:
@@ -65,6 +67,7 @@ async def dispatch(
             link_style=config.link_style,
             cell=cell,
             docbook_ids=docbook_ids,
+            root=root,
         )
 
     if config.offline:

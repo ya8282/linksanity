@@ -19,6 +19,7 @@ def check(
     link_style: str | None = None,
     cell: int | None = None,
     docbook_ids: AbstractSet[str] = frozenset(),
+    root: str | Path | None = None,
 ) -> LinkResult:
     """Resolve and validate an internal or anchor link.
 
@@ -28,6 +29,15 @@ def check(
     If the direct path doesn't exist and link_style is set (mkdocs, docusaurus,
     sphinx), also tries that SSG's built-URL conventions (extensionless links,
     directory-index links) against the source files on disk.
+
+    A path_part starting with "/" is root-relative: it resolves against
+    `root` (the scan root passed down from the scan entry point) rather than
+    source_path.parent. pathlib's / operator discards its left operand for an
+    absolute right operand (Path("a/b") / "/c/d" == Path("/c/d")), so the
+    leading slash is stripped before joining onto root -- never joined raw.
+    When root is None (a caller that predates this parameter), root-relative
+    links fall back to resolving against source_path.parent, same as a
+    regular relative link, rather than escaping to the filesystem root.
 
     docbook_ids is the corpus-wide set of DocBook id/xml:id values (see
     scanner._collect_docbook_ids), used to resolve docbook-xref: sentinel
@@ -63,15 +73,25 @@ def check(
     if "#" in url:
         path_part, fragment = url.split("#", 1)
 
-    # Resolve the target file
+    # Resolve the target file. A leading "/" is root-relative and must be
+    # stripped before joining -- otherwise pathlib's / operator discards
+    # whatever base_dir we picked and resolves against the filesystem root.
     if link_type == LinkType.ANCHOR or not path_part:
         target_path = source_path
+        base_dir = source_path.parent
+        rel_part = path_part
     else:
-        target_path = (source_path.parent / path_part).resolve()
+        if path_part.startswith("/"):
+            base_dir = Path(root) if root is not None else source_path.parent
+            rel_part = path_part.lstrip("/")
+        else:
+            base_dir = source_path.parent
+            rel_part = path_part
+        target_path = (base_dir / rel_part).resolve()
 
     # Check file existence for non-pure-anchor links
     if path_part and not target_path.exists():
-        resolved = _resolve_via_preset(source_path.parent, path_part, link_style)
+        resolved = _resolve_via_preset(base_dir, rel_part, link_style)
         if resolved is not None:
             target_path = resolved
         else:

@@ -257,6 +257,98 @@ class TestLinkStylePresets:
         assert result.status == LinkStatus.BROKEN
 
 
+class TestRootRelativeLinks:
+    """Root-relative links (leading '/') resolve against the scan root, not
+    source_path.parent -- pathlib's / operator would otherwise discard the
+    left operand entirely and resolve against the filesystem root."""
+
+    def test_root_relative_link_to_existing_file_is_ok(self, tmp_path: Path) -> None:
+        # Source lives nested under the scan root; the target is a sibling
+        # of the root itself, unreachable via source_path.parent.
+        subdir = tmp_path / "guides"
+        subdir.mkdir()
+        src = subdir / "page.md"
+        target = tmp_path / "output-modes.md"
+        src.write_text("# Page")
+        target.write_text("# Output Modes")
+
+        result = check(
+            "/output-modes.md", str(src), 1, LinkType.INTERNAL, root=tmp_path,
+        )
+        assert result.status == LinkStatus.OK
+
+    def test_root_relative_link_to_missing_file_is_broken(self, tmp_path: Path) -> None:
+        subdir = tmp_path / "guides"
+        subdir.mkdir()
+        src = subdir / "page.md"
+        src.write_text("# Page")
+
+        result = check(
+            "/nonexistent.md", str(src), 1, LinkType.INTERNAL, root=tmp_path,
+        )
+        assert result.status == LinkStatus.BROKEN
+        assert result.error is not None
+
+    def test_root_relative_link_with_fragment_checks_anchor(self, tmp_path: Path) -> None:
+        subdir = tmp_path / "guides"
+        subdir.mkdir()
+        src = subdir / "page.md"
+        target = tmp_path / "output-modes.md"
+        src.write_text("# Page")
+        target.write_text("# Output Modes\n\n## Streaming\n")
+
+        result = check(
+            "/output-modes.md#streaming", str(src), 1, LinkType.INTERNAL,
+            root=tmp_path, check_anchors=True,
+        )
+        assert result.status == LinkStatus.OK
+
+    def test_root_relative_link_with_broken_fragment_is_broken(self, tmp_path: Path) -> None:
+        subdir = tmp_path / "guides"
+        subdir.mkdir()
+        src = subdir / "page.md"
+        target = tmp_path / "output-modes.md"
+        src.write_text("# Page")
+        target.write_text("# Output Modes\n")
+
+        result = check(
+            "/output-modes.md#ghost", str(src), 1, LinkType.INTERNAL,
+            root=tmp_path, check_anchors=True,
+        )
+        assert result.status == LinkStatus.BROKEN
+
+    def test_root_relative_link_via_docusaurus_preset(self, tmp_path: Path) -> None:
+        # The extensionless leading-slash link docusaurus authors actually
+        # write, e.g. /guides/output-modes -- must reach the preset fallback
+        # with the right base_dir, not have it silently skipped.
+        subdir = tmp_path / "guides"
+        subdir.mkdir()
+        target = subdir / "output-modes.md"
+        target.write_text("# Output Modes")
+        src = tmp_path / "index.md"
+        src.write_text("# Index")
+
+        result = check(
+            "/guides/output-modes", str(src), 1, LinkType.INTERNAL,
+            root=tmp_path, link_style="docusaurus",
+        )
+        assert result.status == LinkStatus.OK
+
+    def test_root_relative_link_without_root_falls_back_to_source_parent(
+        self, tmp_path: Path
+    ) -> None:
+        # No root passed (e.g. a direct check() caller that predates this
+        # feature): still resolves sensibly (relative to the source file's
+        # own directory) rather than escaping to the filesystem root.
+        src = tmp_path / "index.md"
+        target = tmp_path / "other.md"
+        src.write_text("# Index")
+        target.write_text("# Other")
+
+        result = check("/other.md", str(src), 1, LinkType.INTERNAL)
+        assert result.status == LinkStatus.OK
+
+
 class TestCheckResultFields:
     def test_result_preserves_source_and_line(self, tmp_path: Path) -> None:
         src = tmp_path / "a.md"

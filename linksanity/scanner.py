@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import glob as glob_module
+import os
 import sys
 from pathlib import Path
 
@@ -41,6 +42,11 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
     cache = Cache(Path(config.cache_file), config.cache_ttl) if config.cache_file else None
 
     paths = _expand_paths(patterns)
+    # Root-relative links (leading "/") resolve against the scan root, not
+    # source_path.parent -- computed once from the original patterns (not
+    # the expanded per-file list), same corpus-wide-value pattern as
+    # docbook_ids below.
+    root = _scan_root(patterns)
     # Record the full corpus before any incremental filtering: the fixer's
     # moved-file resolver needs every candidate target, not just changed files.
     queue.corpus_files = list(paths)
@@ -86,7 +92,7 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
         *[
             dispatch(
                 url, src, line, lt, config, http_sem, pw_sem,
-                cell=cell, docbook_ids=docbook_ids,
+                cell=cell, docbook_ids=docbook_ids, root=root,
             )
             for url, src, line, lt, cell in to_check
         ],
@@ -153,6 +159,42 @@ def _collect_docbook_ids(paths: list[Path]) -> set[str]:
         if path.suffix.lower() in (".xml", ".dbk"):
             docbook_ids |= docbook.extract_ids(path)
     return docbook_ids
+
+
+def _scan_root(patterns: list[str]) -> Path:
+    """Return the directory root-relative links (leading '/') resolve against.
+
+    A single directory target is its own root; a single file target's root
+    is its parent directory (matches init.py's docs-root == scan-root
+    default, e.g. `linksanity scan website/docs`). Multiple targets, or a
+    glob pattern that isn't itself an existing file/dir, fall back to the
+    common ancestor of every resolved candidate, or the current directory
+    when there's nothing to anchor on at all.
+    """
+    roots: list[Path] = []
+    for pattern in patterns:
+        p = Path(pattern)
+        if p.is_dir():
+            roots.append(p.resolve())
+        elif p.is_file():
+            roots.append(p.resolve().parent)
+        else:
+            matches = [
+                Path(m) for m in glob_module.glob(pattern, recursive=True) if Path(m).is_file()
+            ]
+            if matches:
+                roots.append(Path(os.path.commonpath([str(m.resolve().parent) for m in matches])))
+
+    if not roots:
+        return Path.cwd()
+    if len(roots) == 1:
+        return roots[0]
+    try:
+        return Path(os.path.commonpath([str(r) for r in roots]))
+    except ValueError:
+        # No common path (e.g. different drives on Windows) -- nothing
+        # sensible to anchor root-relative links to.
+        return Path.cwd()
 
 
 def _walk_pruned(root: Path) -> list[Path]:

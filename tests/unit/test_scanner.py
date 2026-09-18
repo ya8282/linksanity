@@ -14,7 +14,13 @@ import respx
 from linksanity import cache as cache_module
 from linksanity.config import Config
 from linksanity.queue import LinkResult, LinkStatus, LinkType
-from linksanity.scanner import _collect_docbook_ids, _expand_paths, run_scan
+from linksanity.scanner import (
+    _collect_docbook_ids,
+    _expand_paths,
+    _expand_paths_and_roots,
+    _pattern_root,
+    run_scan,
+)
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 DOCBOOK_BOOK_DIR = FIXTURES / "docbook-book"
@@ -400,6 +406,132 @@ class TestExpandPathsPruning:
         paths = _expand_paths([str(tmp_path)])
 
         assert [p.name for p in paths] == ["a.md"]
+
+
+class TestPerPatternRoot:
+    """linksanity-ham: multi-pattern/glob scans must resolve each file's
+    root-relative links against the root of the *pattern* that produced it,
+    not one corpus-wide commonpath (which can sit outside every scanned
+    tree entirely)."""
+
+    @pytest.mark.asyncio
+    async def test_unrelated_directories_each_resolve_against_own_root(
+        self, tmp_path: Path
+    ) -> None:
+        # Measured repro (0ho's reviewer): a decoy file sits at the
+        # commonpath of the two unrelated trees, outside both of them. The
+        # old corpus-wide commonpath root let a genuinely broken
+        # root-relative link resolve against the decoy and report OK -- a
+        # false negative. Each pattern's own root must not see the decoy.
+        (tmp_path / "missing.md").write_text("# decoy, outside both trees\n")
+
+        x_docs = tmp_path / "x" / "docs"
+        x_docs.mkdir(parents=True)
+        (x_docs / "page.md").write_text("[link](/missing.md)\n")
+
+        y_docs = tmp_path / "y" / "docs"
+        y_docs.mkdir(parents=True)
+        (y_docs / "other.md").write_text("# nothing here\n")
+
+        config = Config(offline=True)
+
+        # Single-pattern scan: already correct before and after this fix.
+        queue_single = await run_scan([str(x_docs)], config)
+        assert queue_single.summary()["broken"] == 1
+
+        # Multi-pattern scan: this is the bug. Before the fix, x/docs and
+        # y/docs's commonpath (tmp_path) contains the decoy, so the link
+        # resolves against it and passes.
+        queue_multi = await run_scan([str(x_docs), str(y_docs)], config)
+        assert queue_multi.summary()["broken"] == 1
+        assert queue_multi.summary()["ok"] == 0
+
+
+class TestPatternRoot:
+    """_pattern_root: the root a single pattern's own root-relative links
+    resolve against."""
+
+    def test_directory_pattern_roots_at_itself(self, tmp_path: Path) -> None:
+        d = tmp_path / "docs"
+        d.mkdir()
+
+        assert _pattern_root(str(d)) == d.resolve()
+
+    def test_file_pattern_roots_at_parent(self, tmp_path: Path) -> None:
+        f = tmp_path / "docs" / "index.md"
+        f.parent.mkdir()
+        f.write_text("# x\n")
+
+        assert _pattern_root(str(f)) == f.resolve().parent
+
+    def test_glob_roots_at_literal_prefix_not_match_commonpath(
+        self, tmp_path: Path
+    ) -> None:
+        # Both matches share a deeper common parent than the glob's own
+        # literal (non-magic) prefix directory. The commonpath of the
+        # matches would wrongly root at that deeper directory.
+        deep = tmp_path / "globdir" / "sub" / "deep"
+        deep.mkdir(parents=True)
+        (deep / "one.md").write_text("# one\n")
+        (deep / "two.md").write_text("# two\n")
+
+        pattern = str(tmp_path / "globdir" / "**" / "*.md")
+
+        assert _pattern_root(pattern) == (tmp_path / "globdir").resolve()
+
+    def test_bare_glob_with_no_directory_part_roots_at_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        assert _pattern_root("*.md") == tmp_path.resolve()
+
+    def test_nonexistent_pattern_does_not_crash(self) -> None:
+        root = _pattern_root("does/not/exist.md")
+
+        assert isinstance(root, Path)
+
+
+class TestExpandPathsAndRoots:
+    """_expand_paths_and_roots: per-file root map threaded alongside the
+    existing deduplicated file list."""
+
+    def test_pattern_matching_nothing_does_not_crash(self, tmp_path: Path) -> None:
+        paths, roots = _expand_paths_and_roots([str(tmp_path / "nope" / "*.md")])
+
+        assert paths == []
+        assert roots == {}
+
+    def test_mixed_absolute_and_relative_patterns_do_not_crash(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        abs_dir = tmp_path / "abs_docs"
+        abs_dir.mkdir()
+        (abs_dir / "a.md").write_text("# a\n")
+        rel_dir = tmp_path / "rel_docs"
+        rel_dir.mkdir()
+        (rel_dir / "b.md").write_text("# b\n")
+
+        paths, roots = _expand_paths_and_roots([str(abs_dir), "rel_docs"])
+
+        assert {p.name for p in paths} == {"a.md", "b.md"}
+        by_name = {p.name: p for p in paths}
+        assert roots[by_name["a.md"]] == abs_dir.resolve()
+        assert roots[by_name["b.md"]] == rel_dir.resolve()
+
+    def test_file_matched_by_two_patterns_keeps_first_patterns_root(
+        self, tmp_path: Path
+    ) -> None:
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        f = docs / "index.md"
+        f.write_text("# x\n")
+
+        paths, roots = _expand_paths_and_roots([str(docs), str(f)])
+
+        assert paths == [f]
+        assert roots[f] == docs.resolve()
 
 
 class TestDocbookIdPrescan:

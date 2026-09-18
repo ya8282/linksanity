@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import glob as glob_module
-import os
 import sys
 from pathlib import Path
 
@@ -41,12 +40,14 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
     queue = LinkQueue()
     cache = Cache(Path(config.cache_file), config.cache_ttl) if config.cache_file else None
 
-    paths = _expand_paths(patterns)
-    # Root-relative links (leading "/") resolve against the scan root, not
-    # source_path.parent -- computed once from the original patterns (not
-    # the expanded per-file list), same corpus-wide-value pattern as
-    # docbook_ids below.
-    root = _scan_root(patterns)
+    paths, file_roots = _expand_paths_and_roots(patterns)
+    # Root-relative links (leading "/") resolve against the root of the
+    # pattern that discovered their source file, not source_path.parent and
+    # not one corpus-wide value -- a multi-pattern or glob scan's patterns
+    # can point at unrelated trees, so there is no single sensible root for
+    # the whole run (see linksanity-ham). Looked up per source file below,
+    # keyed by path string since that's how dispatch identifies a source.
+    root_by_source = {str(p): r for p, r in file_roots.items()}
     # Record the full corpus before any incremental filtering: the fixer's
     # moved-file resolver needs every candidate target, not just changed files.
     queue.corpus_files = list(paths)
@@ -92,7 +93,7 @@ async def run_scan(patterns: list[str], config: Config) -> LinkQueue:
         *[
             dispatch(
                 url, src, line, lt, config, http_sem, pw_sem,
-                cell=cell, docbook_ids=docbook_ids, root=root,
+                cell=cell, docbook_ids=docbook_ids, root=root_by_source.get(src),
             )
             for url, src, line, lt, cell in to_check
         ],
@@ -161,40 +162,38 @@ def _collect_docbook_ids(paths: list[Path]) -> set[str]:
     return docbook_ids
 
 
-def _scan_root(patterns: list[str]) -> Path:
-    """Return the directory root-relative links (leading '/') resolve against.
+def _pattern_root(pattern: str) -> Path:
+    """Return the directory a single pattern's root-relative links (leading
+    '/') resolve against.
 
-    A single directory target is its own root; a single file target's root
-    is its parent directory (matches init.py's docs-root == scan-root
-    default, e.g. `linksanity scan website/docs`). Multiple targets, or a
-    glob pattern that isn't itself an existing file/dir, fall back to the
-    common ancestor of every resolved candidate, or the current directory
-    when there's nothing to anchor on at all.
+    A directory pattern is its own root; a single file pattern's root is
+    its parent directory (matches init.py's docs-root == scan-root default,
+    e.g. `linksanity scan website/docs`). Anything else is treated as a
+    glob: its root is the pattern's literal (non-magic) prefix directory --
+    the path segments before the first wildcard -- not the common ancestor
+    of whatever it happens to match, which can land deeper than the glob's
+    own directory or, when combined with an unrelated pattern, outside
+    every scanned tree entirely (linksanity-ham). A bare glob with no
+    directory part (e.g. '*.md') roots at the current directory. A pattern
+    that matches nothing on disk still returns a root; nothing here reads
+    the filesystem beyond is_dir()/is_file() and glob's own path parsing,
+    so it cannot crash.
     """
-    roots: list[Path] = []
-    for pattern in patterns:
-        p = Path(pattern)
-        if p.is_dir():
-            roots.append(p.resolve())
-        elif p.is_file():
-            roots.append(p.resolve().parent)
-        else:
-            matches = [
-                Path(m) for m in glob_module.glob(pattern, recursive=True) if Path(m).is_file()
-            ]
-            if matches:
-                roots.append(Path(os.path.commonpath([str(m.resolve().parent) for m in matches])))
+    p = Path(pattern)
+    if p.is_dir():
+        return p.resolve()
+    if p.is_file():
+        return p.resolve().parent
 
-    if not roots:
+    prefix_parts: list[str] = []
+    for part in p.parts:
+        if glob_module.has_magic(part):
+            break
+        prefix_parts.append(part)
+
+    if not prefix_parts:
         return Path.cwd()
-    if len(roots) == 1:
-        return roots[0]
-    try:
-        return Path(os.path.commonpath([str(r) for r in roots]))
-    except ValueError:
-        # No common path (e.g. different drives on Windows) -- nothing
-        # sensible to anchor root-relative links to.
-        return Path.cwd()
+    return Path(*prefix_parts).resolve()
 
 
 def _walk_pruned(root: Path) -> list[Path]:
@@ -234,10 +233,18 @@ def _walk_pruned(root: Path) -> list[Path]:
     return found
 
 
-def _expand_paths(patterns: list[str]) -> list[Path]:
-    """Expand file paths, directories, and glob patterns to a deduplicated list."""
+def _expand_paths_and_roots(patterns: list[str]) -> tuple[list[Path], dict[Path, Path]]:
+    """Expand file paths, directories, and glob patterns to a deduplicated
+    list, alongside each file's root-relative-link root (see _pattern_root).
+
+    A file matched by more than one pattern keeps the root of the first
+    pattern that produced it, mirroring the dedup order below (first
+    occurrence wins) rather than picking a second, unrelated root for a
+    file already claimed.
+    """
     seen: set[Path] = set()
     result: list[Path] = []
+    roots: dict[Path, Path] = {}
 
     for pattern in patterns:
         p = Path(pattern)
@@ -252,12 +259,21 @@ def _expand_paths(patterns: list[str]) -> list[Path]:
                 if Path(m).is_file()
             ]
 
-        for c in candidates:
-            if c not in seen:
-                seen.add(c)
-                result.append(c)
+        new_candidates = [c for c in candidates if c not in seen]
+        if not new_candidates:
+            continue
+        pattern_root = _pattern_root(pattern)
+        for c in new_candidates:
+            seen.add(c)
+            result.append(c)
+            roots[c] = pattern_root
 
-    return result
+    return result, roots
+
+
+def _expand_paths(patterns: list[str]) -> list[Path]:
+    """Expand file paths, directories, and glob patterns to a deduplicated list."""
+    return _expand_paths_and_roots(patterns)[0]
 
 
 def _parse(path: Path, check_images: bool, myst: bool = False) -> list[tuple[str, int]]:

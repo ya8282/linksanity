@@ -707,7 +707,9 @@ reads the field, so setting it silently has no effect on a crawl.
 Four fields are different: `output`, `report`, `github_issue`, and
 `github_repo` are never read from `linksanity.toml` at all — `load_config`
 doesn't parse them from the file, so they can only be set via CLI flag,
-regardless of subcommand.
+regardless of subcommand. Because they're never consumed, linksanity also
+reports them on stderr as unrecognised config keys; that warning is expected
+for these four and not a sign anything is wrong.
 
 ### `linksanity scan <paths...>`
 

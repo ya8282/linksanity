@@ -68,4 +68,8 @@ is actually acted on by the subcommand you're running.
 from the file — regardless of subcommand, they can only be set via CLI flag
 (`--output`, `--report`, `--github-issue`, `--repo`). Putting
 `output = "results.json"` in `linksanity.toml` does nothing; you must pass
-`--output results.json` on the command line every time.
+`--output results.json` on the command line every time. Because these keys
+are never consumed, linksanity also reports them on stderr as unrecognised
+(`[linksanity] warning: unrecognised config key(s) in <path>: github_issue, github_repo, output, report`)
+— that warning is expected for these four keys, not a sign anything is
+wrong.

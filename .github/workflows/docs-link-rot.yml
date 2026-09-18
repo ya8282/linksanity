@@ -1,0 +1,76 @@
+name: Docs Link Rot
+
+# Weekly, not per-push: this workflow checks website/docs ONLINE (real HTTP
+# requests to every external host the docs link to). Running that on every
+# push/PR (like deploy-docs.yml's --offline gate does for internal links)
+# would make routine docs edits flaky on hosts this repo doesn't control.
+# Link rot is slow-moving, so a weekly cadence is enough to catch it without
+# being in anyone's way.
+on:
+  schedule:
+    # Sunday 03:17 UTC: a non-top-of-hour minute (avoids the surge of jobs
+    # GitHub Actions queues at :00) on a weekend early morning, which is
+    # Saturday evening in the Americas and pre-dawn in Europe -- outside
+    # active docs-editing hours for this project's contributors.
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  link-rot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install linksanity
+        run: pip install -e .
+
+      - name: Docs link check (online)
+        # Deliberately the inverse of deploy-docs.yml's gate: online (no
+        # --offline) so external hosts are actually checked, and
+        # continue-on-error so a dead or flaky external link reports without
+        # turning this scheduled run red or blocking anything. --retry/
+        # --timeout are raised above the CLI defaults (retry=2, timeout=10s)
+        # so one slow or momentarily-flaky host doesn't read as broken.
+        # --github-issue opens/updates a single deduplicated issue (matched
+        # by title prefix, see linksanity/reporters/github_reporter.py) so
+        # a standing link-rot problem doesn't spam a new issue every week.
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          linksanity scan website/docs \
+            --check-anchors \
+            --retry 3 \
+            --timeout 20 \
+            --format json \
+            --output link-rot-results.json \
+            --report link-rot-report.md \
+            --github-issue \
+            --repo ${{ github.repository }}
+
+      - name: Publish the report to the run summary
+        # Without this the job log shows nothing: the scan writes to files, so
+        # a green run and a run with dead links look identical in the UI.
+        if: always()
+        run: |
+          if [ -f link-rot-report.md ]; then
+            cat link-rot-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload link rot report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: docs-link-rot-report
+          path: |
+            link-rot-results.json
+            link-rot-report.md
+          retention-days: 90

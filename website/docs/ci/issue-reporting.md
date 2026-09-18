@@ -13,7 +13,7 @@ linksanity finds its existing issue by scanning up to 1000 open issues, most-rec
 
 ### When to use it
 
-- **Scheduled runs** — a weekly cron job catches link rot that crept in after your last merge. linksanity only creates or updates the issue while links are failing — it never closes or comments on it once they're fixed, so close it yourself.
+- **Scheduled runs** — a weekly cron job catches link rot that crept in after your last merge. linksanity creates or updates the issue while links are failing, and on the next clean run comments that the links now resolve and closes it — no need to close it yourself.
 - **Repos without branch protection** — if broken links won't block a PR merge, an issue is the only signal that survives past the CI run.
 - **Large docs sites** — when dozens of links break at once (e.g. a domain migration), a single issue is easier to triage than scrolling through CI logs.
 

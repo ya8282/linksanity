@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from datetime import UTC, datetime
 from itertools import groupby
 from operator import attrgetter
 
@@ -36,8 +37,6 @@ _MAX_PAGES = 10
 
 def report(results: list[LinkResult], config: Config) -> None:
     failing = [r for r in results if r.status in FAILING_STATUSES]
-    if not failing:
-        return
 
     token = os.environ.get("GITHUB_TOKEN", "")
     if not token:
@@ -52,6 +51,10 @@ def report(results: list[LinkResult], config: Config) -> None:
     if not _REPO_RE.match(repo):
         raise ValueError(f"github_repo must be in OWNER/REPO format, got: {repo!r}")
 
+    if not failing:
+        _resolve_existing_issue(token, repo)
+        return
+
     title = f"{_TITLE_PREFIX} {len(failing)} failing link(s) found"
     body = _build_body(failing)
 
@@ -60,6 +63,59 @@ def report(results: list[LinkResult], config: Config) -> None:
         _update_issue(token, repo, existing, title, body)
     else:
         _create_issue(token, repo, title, body)
+
+
+def _resolve_existing_issue(token: str, repo: str) -> None:
+    """Close a standing linksanity issue once a run finds no failing links.
+
+    Reuses `_find_existing_issue`, which only ever lists issues with
+    `state=open`, so an issue a human already closed by hand is never
+    found here and therefore never reopened or re-commented on. That
+    same open-only scoping is what makes a second clean run a no-op: the
+    first run's close already took the issue out of the open set.
+
+    `_find_existing_issue` returns on its first prefix match, same as the
+    open/update path -- the reporter has only ever maintained a single
+    canonical issue per repo, so resolving that one match is consistent
+    with the rest of this module rather than a new multi-issue policy. If
+    a repo somehow has more than one open `[linksanity]`-prefixed issue
+    (e.g. a human opened a second one by hand), only the one this search
+    surfaces is resolved; the others are left for a human to triage.
+
+    Any API failure (network error, non-2xx response) propagates via
+    `raise_for_status()`/httpx, the same as every other call in this
+    module -- it is not caught or downgraded to a warning here.
+    """
+    number = _find_existing_issue(token, repo, _TITLE_PREFIX)
+    if number is None:
+        return
+    _comment_resolved(token, repo, number)
+    _close_issue(token, repo, number)
+
+
+def _comment_resolved(token: str, repo: str, number: int) -> None:
+    today = datetime.now(tz=UTC).strftime("%Y-%m-%d")
+    body = (
+        f"All previously reported links now resolve as of {today}. "
+        "Closing this issue."
+    )
+    resp = httpx.post(
+        f"{_API}/repos/{repo}/issues/{number}/comments",
+        json={"body": body},
+        headers=_headers(token),
+        timeout=15,
+    )
+    resp.raise_for_status()
+
+
+def _close_issue(token: str, repo: str, number: int) -> None:
+    resp = httpx.patch(
+        f"{_API}/repos/{repo}/issues/{number}",
+        json={"state": "closed"},
+        headers=_headers(token),
+        timeout=15,
+    )
+    resp.raise_for_status()
 
 
 def _build_body(failing: list[LinkResult]) -> str:

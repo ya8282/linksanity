@@ -34,18 +34,24 @@ jobs:
 
       - name: Docs link check (online)
         # Deliberately the inverse of deploy-docs.yml's gate: online (no
-        # --offline) so external hosts are actually checked, and
-        # continue-on-error so a dead or flaky external link reports without
-        # turning this scheduled run red or blocking anything. --retry/
+        # --offline) so external hosts are actually checked. --retry/
         # --timeout are raised above the CLI defaults (retry=2, timeout=10s)
         # so one slow or momentarily-flaky host doesn't read as broken.
         # --github-issue opens/updates a single deduplicated issue (matched
         # by title prefix, see linksanity/reporters/github_reporter.py) so
         # a standing link-rot problem doesn't spam a new issue every week.
-        continue-on-error: true
+        #
+        # A dead link must not turn this scheduled run red -- exit code 1
+        # (broken links) is treated as success below. But a broken reporter
+        # (missing GITHUB_TOKEN, GitHub API error -- exit code 3, see
+        # linksanity/cli.py's _run_github_reporter) must fail the step: a
+        # week where linksanity silently failed to tell anyone must not look
+        # the same as a clean week. Any other exit code (e.g. a crash) is
+        # also a step failure, not just the two we anticipated.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          code=0
           linksanity scan website/docs \
             --check-anchors \
             --retry 3 \
@@ -54,7 +60,13 @@ jobs:
             --output link-rot-results.json \
             --report link-rot-report.md \
             --github-issue \
-            --repo ${{ github.repository }}
+            --repo ${{ github.repository }} || code=$?
+
+          if [ "$code" -eq 0 ] || [ "$code" -eq 1 ]; then
+            exit 0
+          fi
+          echo "::error::linksanity exited $code (not the broken-links code, 1) -- treating as a step failure so a broken reporter can't hide as a clean run." >&2
+          exit "$code"
 
       - name: Publish the report to the run summary
         # Without this the job log shows nothing: the scan writes to files, so

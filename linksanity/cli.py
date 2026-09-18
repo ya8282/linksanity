@@ -404,8 +404,22 @@ def scan(
 
 
 def _run_github_reporter(results: list[LinkResult], config: Config) -> None:
+    """Run the GitHub issue reporter, exiting distinctly if it fails.
+
+    A reporter failure (missing GITHUB_TOKEN, a non-2xx GitHub API response,
+    etc.) must not be mistaken for "no broken links found" -- exit 1 is
+    already spoken for by broken links, and exit 0 by a clean run. This
+    catches the reporter's own exception, prints what happened to stderr, and
+    exits 3 so a caller (e.g. a CI step) can tell "we could not tell you"
+    apart from "nothing to tell you".
+    """
     from linksanity.reporters.github_reporter import report as gh_report  # noqa: I001
-    gh_report(results, config)
+
+    try:
+        gh_report(results, config)
+    except Exception as exc:
+        typer.echo(f"[linksanity] github reporter failed: {exc}", err=True)
+        raise typer.Exit(3) from exc
 
 
 # ── fix ───────────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/linksanity.svg)](https://pypi.org/project/linksanity/)
 
-Detect broken links and redirects in Markdown, reStructuredText, HTML, AsciiDoc, MDX, Jupyter Notebooks, MyST-flavored Markdown, and DocBook content — either by statically scanning source files or by crawling a live deployed site with a headless browser — and fix the ones it's confident about in place. Don't let dead URLs leave you hanging on the rim: linksanity keeps your documentation or web content game flawless, so you never drop the ball on your readers.
+Detect broken links and redirects in live deployed sites or source files. Don't let dead URLs leave you hanging on the rim: linksanity keeps your documentation or web content game flawless, so you never drop the ball on your readers.
 
 ## Supported formats
 
@@ -17,20 +17,24 @@ linksanity checks links in 8 file formats:
 - **MyST-flavored Markdown** — `.md` files with opt-in `--myst` flag or `myst = true` in config (enables MyST role extraction: `{doc}`, `{ref}`)
 - **DocBook** — `.xml`, `.dbk` files (extracts `<xref linkend>` for DocBook 4 and 5, `<link xlink:href>` for DocBook 5, and `<ulink url>` for DocBook 4)
 
+It can also crawl the rendered pages on your site.
+
+## Prerequisites
+
+- Requires Python 3.11+.
+ 
 ## Install
 
 ```bash
 pip install linksanity
 ```
 
-For JS-rendered pages (Playwright headless browser, needed for `crawl`):
+If you intend to check JS-rendered pages, install the Playwright headless browser:
 
 ```bash
 pip install "linksanity[browser]"
 playwright install chromium
 ```
-
-Requires Python 3.11+.
 
 ## Quick start
 

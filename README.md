@@ -55,17 +55,6 @@ The fastest way to wire this into a repo is the setup wizard, which detects your
 linksanity init
 ```
 
-## Documentation
-
-The full docs site covers setup, every flag, CI integration, fixing broken links, and driving linksanity from an AI agent:
-
-- **Overview**: [Start here](https://ya8282.github.io/linksanity/)
-- **Guides**: [Installation](https://ya8282.github.io/linksanity/guides/installation) · [Getting started](https://ya8282.github.io/linksanity/guides/getting-started) (`linksanity init`, baselines, first scan) · [CLI reference](https://ya8282.github.io/linksanity/guides/cli-reference) (every flag, per subcommand) · [Configuration](https://ya8282.github.io/linksanity/guides/configuration) (`linksanity.toml`) · [Output modes](https://ya8282.github.io/linksanity/guides/output-modes) (reporters, JSON schema, exit codes)
-- **Recipes**: [Scanning local files](https://ya8282.github.io/linksanity/recipes/scanning-local-files) · [Crawling a site](https://ya8282.github.io/linksanity/recipes/crawling-a-site) · [Excluding links](https://ya8282.github.io/linksanity/recipes/excluding-links) · [Anchors and images](https://ya8282.github.io/linksanity/recipes/anchors-and-images) · [Baselines and incremental scans](https://ya8282.github.io/linksanity/recipes/baselines-and-incremental) · [Fixing broken links](https://ya8282.github.io/linksanity/recipes/fixing-broken-links)
-- **CI**: [GitHub Actions](https://ya8282.github.io/linksanity/ci/github-actions) · [Pre-commit hook](https://ya8282.github.io/linksanity/ci/pre-commit) · [Issue reporting](https://ya8282.github.io/linksanity/ci/issue-reporting)
-- **AI agents**: [Driving linksanity from an agent](https://ya8282.github.io/linksanity/agents) (JSON schemas, repair loop, MCP tool definition, library usage)
-- **Reference**: [Internals](https://ya8282.github.io/linksanity/internals) (how it works, contributing) · [Troubleshooting](https://ya8282.github.io/linksanity/troubleshooting)
-
 ## License
 
 MIT

@@ -38,9 +38,16 @@ playwright install chromium
 
 ## Quick start
 
+For a source file scan, run the following command, replacing `DOCS_DIR` with the path to your documentation source file directory:
+
 ```bash
-$ linksanity scan ./docs/
-docs/api/guide.md
+$ linksanity scan DOCS_DIR
+```
+
+Sample output:
+
+```bash
+DOCS_DIR/api/guide.md
   BROKEN    line   12  ./missing.md — file not found
   REDIRECT  line   45  https://old.example.com → https://new.example.com
 

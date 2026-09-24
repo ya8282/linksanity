@@ -40,6 +40,7 @@ class Config:
     baseline: str | None = None
     annotations: bool | None = None
     offline: bool = False
+    stealth: bool = False
 
 
 class ConfigError(ValueError):
@@ -261,6 +262,7 @@ _CONSUMED_KEYS = frozenset(
         "baseline",
         "annotations",
         "offline",
+        "stealth",
     }
 )
 
@@ -349,6 +351,7 @@ def load_config(
         baseline=_str(data, "baseline", "", search_path) or None,
         annotations=_bool_or_none(data, "annotations", search_path),
         offline=_bool(data, "offline", Config.offline, search_path),
+        stealth=_bool(data, "stealth", Config.stealth, search_path),
     )
 
     # CLI overrides replace file values when explicitly provided

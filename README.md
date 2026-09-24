@@ -36,6 +36,8 @@ pip install "linksanity[browser]"
 playwright install chromium
 ```
 
+Pass `--stealth` to `scan`/`crawl` to patch the common headless-Chromium fingerprints (`navigator.webdriver`, plugins, languages, etc.) that some sites use for bot detection. It only helps against fingerprint-based checks — it does not help against IP-reputation-based bot walls (iso.org is a confirmed example of the latter).
+
 ## Quick start
 
 For a source file scan, run the following command, replacing `DOCS_DIR` with the path to your documentation source file directory:

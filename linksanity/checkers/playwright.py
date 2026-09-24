@@ -37,6 +37,68 @@ ANALYTICS_DOMAINS: frozenset[str] = frozenset({
 })
 
 
+_STEALTH_INIT_SCRIPT = """
+(() => {
+  // Minimal headless-Chromium fingerprint evasions.
+  // Mirrors the highest-signal patches from puppeteer-extra-plugin-stealth /
+  // playwright-stealth. Targets fingerprint-based bot walls only.
+
+  // 1. navigator.webdriver: headless Chromium sets this true by default.
+  Object.defineProperty(Navigator.prototype, 'webdriver', {
+    get: () => false,
+    configurable: true,
+  });
+
+  // 2. navigator.plugins: headless Chromium reports an empty PluginArray.
+  Object.defineProperty(Navigator.prototype, 'plugins', {
+    get: () => {
+      const plugins = [1, 2, 3, 4, 5].map(() => ({}));
+      plugins.item = (i) => plugins[i];
+      plugins.namedItem = () => null;
+      plugins.refresh = () => {};
+      return plugins;
+    },
+    configurable: true,
+  });
+
+  // 3. navigator.languages: headless sometimes reports [] instead of a
+  // populated list.
+  Object.defineProperty(Navigator.prototype, 'languages', {
+    get: () => ['en-US', 'en'],
+    configurable: true,
+  });
+
+  // 4. window.chrome: absent entirely in headless; real Chrome always has it.
+  if (!window.chrome) {
+    window.chrome = { runtime: {} };
+  }
+
+  // 5. Notification permission: headless Chromium's default 'denied' state
+  // differs from a real profile's usual 'default', and is a common check.
+  // Guarded: navigator.permissions only exists on secure (https) origins,
+  // so this would throw on a plain http:// page otherwise.
+  if (window.navigator.permissions) {
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) =>
+      parameters.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : originalQuery(parameters);
+  }
+})();
+"""
+
+
+async def _maybe_apply_stealth(page: Any, stealth: bool) -> None:
+    """Inject the fingerprint-evasion init script into `page` when --stealth is set.
+
+    Shared by extract_links(), check(), and crawl_page() so the injection
+    logic lives in exactly one place. No-op when `stealth` is False (the
+    default) -- callers still pay the branch, not a script injection.
+    """
+    if stealth:
+        await page.add_init_script(_STEALTH_INIT_SCRIPT)
+
+
 def _is_download_abort(exc: Exception) -> bool:
     """True if `exc` is Playwright aborting a navigation that became a download.
 
@@ -140,11 +202,15 @@ async def _navigation_outcome(
     return status, (resolved if was_redirected else None), chain, codes
 
 
-async def extract_links(url: str, *, semaphore: asyncio.Semaphore | None = None) -> list[str]:
+async def extract_links(
+    url: str, *, semaphore: asyncio.Semaphore | None = None, stealth: bool = False
+) -> list[str]:
     """Launch a headless browser, render the page, and return all href values.
 
     Filters out mailto:, javascript:, data:, blob:, and empty hrefs.
-    semaphore limits concurrent browser contexts.
+    semaphore limits concurrent browser contexts. stealth patches common
+    headless-browser fingerprints before navigation (see
+    _maybe_apply_stealth).
     """
     _require_playwright()
     from playwright.async_api import async_playwright
@@ -154,6 +220,7 @@ async def extract_links(url: str, *, semaphore: asyncio.Semaphore | None = None)
         browser = await pw.chromium.launch(headless=True)
         try:
             page = await browser.new_page()
+            await _maybe_apply_stealth(page, stealth)
             await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
             hrefs: list[str] = await page.eval_on_selector_all(
                 "a[href]",
@@ -176,10 +243,13 @@ async def check(
     semaphore: asyncio.Semaphore | None = None,
     timeout: int = 10,
     cell: int | None = None,
+    stealth: bool = False,
 ) -> LinkResult:
     """Check whether a URL is reachable using a headless browser.
 
-    Uses Playwright's network response to determine status.
+    Uses Playwright's network response to determine status. stealth patches
+    common headless-browser fingerprints before navigation (see
+    _maybe_apply_stealth).
     """
     _require_playwright()
     from playwright.async_api import Error as PlaywrightError
@@ -190,6 +260,7 @@ async def check(
         browser = await pw.chromium.launch(headless=True)
         try:
             page = await browser.new_page()
+            await _maybe_apply_stealth(page, stealth)
             try:
                 response = await page.goto(
                     url,
@@ -243,12 +314,15 @@ async def crawl_page(
     semaphore: asyncio.Semaphore | None = None,
     timeout: int = 10,
     block_domains: frozenset[str] | None = None,
+    stealth: bool = False,
 ) -> tuple[LinkResult, list[str], set[str]]:
     """Visit a page, check its reachability, and return (result, hrefs, element_ids).
 
     Combines check() and extract_links() into a single browser session.
     element_ids is the set of id="..." values on the rendered page, used to
     validate same-page anchor fragments (empty when the page isn't reachable).
+    stealth patches common headless-browser fingerprints before navigation
+    (see _maybe_apply_stealth).
     """
     _require_playwright()
     from playwright.async_api import Error as PlaywrightError
@@ -259,6 +333,7 @@ async def crawl_page(
         browser = await pw.chromium.launch(headless=True)
         try:
             page = await browser.new_page()
+            await _maybe_apply_stealth(page, stealth)
             if block_domains:
                 from playwright.async_api import Route
 

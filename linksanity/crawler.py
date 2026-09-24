@@ -49,6 +49,7 @@ async def run_crawl(start_url: str, config: Config) -> LinkQueue:
                         url, start_url, 0, LinkType.EXTERNAL,
                         semaphore=pw_sem, timeout=config.timeout,
                         block_domains=block_domains,
+                        stealth=config.stealth,
                     )
                     for url in batch
                 ],

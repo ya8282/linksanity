@@ -289,6 +289,12 @@ def scan(
         False,
         help="Skip external HTTP checks (reported as SKIPPED); does not read or write the cache for them",
     ),
+    stealth: bool = typer.Option(
+        False,
+        help="Patch common headless-browser fingerprints (navigator.webdriver, plugins, etc.) "
+        "before navigation. Does not help against IP-reputation-based bot walls (e.g. "
+        "iso.org's), only fingerprint-based ones.",
+    ),
 ) -> None:
     """Scan local documentation files for broken links."""
     overrides: dict[str, object] = {}
@@ -320,6 +326,8 @@ def scan(
         overrides["annotations"] = annotations
     if offline:
         overrides["offline"] = True
+    if stealth:
+        overrides["stealth"] = True
     if link_style:
         if link_style not in ("mkdocs", "docusaurus", "sphinx"):
             typer.echo(
@@ -691,6 +699,12 @@ def crawl(
         "--annotations/--no-annotations",
         help="Emit GitHub Actions ::error/::warning annotations (default: auto-detect CI)",
     ),
+    stealth: bool = typer.Option(
+        False,
+        help="Patch common headless-browser fingerprints (navigator.webdriver, plugins, etc.) "
+        "before navigation. Does not help against IP-reputation-based bot walls (e.g. "
+        "iso.org's), only fingerprint-based ones.",
+    ),
 ) -> None:
     """Crawl a live site and check all links."""
     try:
@@ -730,6 +744,8 @@ def crawl(
         overrides["annotations"] = annotations
     if format is not None:
         overrides["format"] = format
+    if stealth:
+        overrides["stealth"] = True
 
     ignore_set = _read_domains(ignore_domains)
     skip_set = _read_domains(skip_urls)

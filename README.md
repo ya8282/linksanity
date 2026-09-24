@@ -4,6 +4,15 @@
 
 Detect broken links and redirects in live deployed sites or source files. Don't let dead URLs leave you hanging on the rim: linksanity keeps your documentation or web content game flawless, so you never drop the ball on your readers.
 
+## Features
+
+- **Static scan or live crawl** — check source files directly, or crawl a deployed site with a headless browser (`--stealth` available on both to dodge common bot-fingerprint checks)
+- **Fix mode** — `linksanity fix --write` auto-applies confident redirect and moved-file fixes in place; dry run by default
+- **Anchor checking** — `--check-anchors` validates in-page fragment targets, not just the links themselves
+- **CI integration** — exit codes for scripting, a `linksanity init` setup wizard that writes a GitHub Actions workflow around the [ya8282/linksanity-action](https://github.com/ya8282/linksanity-action), `--github-issue` to file/update a summary issue, and `--annotations` for inline `::error`/`::warning` output
+- **Machine-readable output** — `--format json` (or `csv`) for scripting and diffing results
+- **Baselines and incremental scans** — `--baseline` to report only new breakage, `--incremental` to scan just what changed since the last run
+
 ## Supported formats
 
 linksanity checks links in 8 file formats:
@@ -57,7 +66,7 @@ DOCS_DIR/api/guide.md
 ok=38   broken=1   redirect=1   blocked=1   skipped=0
 ```
 
-Exit code `0` means every link is clean; `1` means at least one broken or redirected link was found — plug that straight into CI. `BLOCKED` does not affect the exit code: a blocked link means the request was refused (401/403), not that the resource is confirmed gone. Point it at a single file, a directory, or a glob; add `--check-anchors` to also validate in-page fragments, or `--format json --output results.json` for machine-readable results.
+Exit code `0` means every link is clean; `1` means at least one broken or redirected link was found — plug that straight into CI. `BLOCKED` does not affect the exit code: a blocked link means the request was refused (401/403), not that the resource is confirmed gone. See [Exit codes](https://ya8282.github.io/linksanity/guides/output-modes#exit-codes) for the full table, including `2` for an operational error and `3` for a failed `--github-issue` report. Point it at a single file, a directory, or a glob; add `--check-anchors` to also validate in-page fragments, or `--format json --output results.json` for machine-readable results.
 
 The fastest way to wire this into a repo is the setup wizard, which detects your docs directory and writes a GitHub Actions workflow for you:
 

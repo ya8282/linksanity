@@ -71,6 +71,12 @@ def scan_paths(
         >>> from linksanity import scan_paths, LinkStatus
         >>> results = scan_paths(["docs/"])
         >>> broken = [r for r in results if r.status == LinkStatus.BROKEN]
+
+    Note:
+        ``LinkStatus.BLOCKED`` (401/403 "bot-wall blocked" responses) is
+        reported as a separate status and is not included in a
+        ``status == LinkStatus.BROKEN`` filter — check for both explicitly
+        if you want to catch either.
     """
     cfg = config if config is not None else Config()
     if check_anchors and not cfg.check_anchors:

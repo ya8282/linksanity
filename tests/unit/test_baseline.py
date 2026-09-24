@@ -60,6 +60,13 @@ class TestLoadBaseline:
             ("a.md", "https://x4.com"): LinkStatus.TOO_MANY_REDIRECTS,
         }
 
+    def test_blocked_status_is_recognized(self, tmp_path: Path) -> None:
+        p = tmp_path / "report.json"
+        _write_report(p, [
+            {"source_file": "a.md", "line": 1, "url": "https://x1.com", "status": "blocked"},
+        ])
+        assert load_baseline(p) == {("a.md", "https://x1.com"): LinkStatus.BLOCKED}
+
     def test_status_less_entry_maps_to_none(self, tmp_path: Path) -> None:
         # A baseline file written before status-aware comparison existed has
         # no "status" field at all. It must load, not crash.
@@ -136,6 +143,29 @@ class TestOnlyNew:
         baseline = {("docs/index.md", "https://example.com/broken"): None}
         r = _result(status=LinkStatus.BROKEN, http_code=404)
         assert only_new([r], baseline) == []
+
+    def test_new_blocked_link_is_kept(self) -> None:
+        r = _result(status=LinkStatus.BLOCKED, http_code=403)
+        assert only_new([r], {}) == [r]
+
+    def test_blocked_staying_blocked_is_suppressed(self) -> None:
+        r = _result(status=LinkStatus.BLOCKED, http_code=403)
+        baseline = {(r.source_file, r.url): LinkStatus.BLOCKED}
+        assert only_new([r], baseline) == []
+
+    def test_blocked_baselined_as_redirect_is_suppressed(self) -> None:
+        # Same severity tier (0): a blocked link at a key baselined as a
+        # redirect stays suppressed rather than re-failing.
+        baseline = {("docs/index.md", "https://example.com/broken"): LinkStatus.REDIRECT}
+        r = _result(status=LinkStatus.BLOCKED, http_code=403)
+        assert only_new([r], baseline) == []
+
+    def test_blocked_degrading_to_broken_refails(self) -> None:
+        # A link baselined while merely blocked (bot-wall) must not stay
+        # green once it degrades to a confirmed failure at the same key.
+        baseline = {("docs/index.md", "https://example.com/broken"): LinkStatus.BLOCKED}
+        r = _result(status=LinkStatus.BROKEN, http_code=404)
+        assert only_new([r], baseline) == [r]
 
 
 def test_every_notable_status_has_an_explicit_severity_tier() -> None:

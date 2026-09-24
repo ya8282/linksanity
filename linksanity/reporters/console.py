@@ -18,6 +18,7 @@ _NOTABLE = {
     LinkStatus.ERROR,
     LinkStatus.REDIRECT,
     LinkStatus.TOO_MANY_REDIRECTS,
+    LinkStatus.BLOCKED,
 }
 
 _LABEL: dict[LinkStatus, tuple[str, str]] = {
@@ -25,6 +26,7 @@ _LABEL: dict[LinkStatus, tuple[str, str]] = {
     LinkStatus.ERROR: ("ERROR   ", "bold red"),
     LinkStatus.REDIRECT: ("REDIRECT", "yellow"),
     LinkStatus.TOO_MANY_REDIRECTS: ("TOOMANY ", "yellow"),
+    LinkStatus.BLOCKED: ("BLOCKED ", "yellow"),
     LinkStatus.SKIPPED: ("SKIPPED ", "dim"),
     LinkStatus.OK: ("OK      ", "green"),
 }
@@ -64,6 +66,7 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
     broken = counts[LinkStatus.BROKEN] + counts[LinkStatus.ERROR]
     redirect = counts[LinkStatus.REDIRECT]
     too_many = counts[LinkStatus.TOO_MANY_REDIRECTS]
+    blocked = counts[LinkStatus.BLOCKED]
     skipped = counts[LinkStatus.SKIPPED]
 
     console.print()
@@ -71,11 +74,13 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
     broken_style = "bold red" if broken else "dim"
     redirect_style = "yellow" if redirect else "dim"
     too_many_style = "yellow" if too_many else "dim"
+    blocked_style = "yellow" if blocked else "dim"
     console.print(
         f"  [green]ok={ok}[/green]"
         f"   [{broken_style}]broken={broken}[/{broken_style}]"
         f"   [{redirect_style}]redirect={redirect}[/{redirect_style}]"
         f"   [{too_many_style}]too_many_redirects={too_many}[/{too_many_style}]"
+        f"   [{blocked_style}]blocked={blocked}[/{blocked_style}]"
         f"   [dim]skipped={skipped}[/dim]"
     )
 

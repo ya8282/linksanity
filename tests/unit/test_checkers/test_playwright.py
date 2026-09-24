@@ -14,7 +14,7 @@ pytest.importorskip("playwright")
 
 from playwright.async_api import Error as PlaywrightError
 
-from linksanity.checkers.playwright import check, crawl_page
+from linksanity.checkers.playwright import check, crawl_page, extract_links
 from linksanity.fixer import build_redirect_proposals, is_permanent_redirect
 from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
 
@@ -554,3 +554,86 @@ class TestDownloadAbortFallback:
         assert links == []
         assert ids == set()
         mock_http_check.assert_awaited_once_with(URL, "f", 1, LinkType.EXTERNAL, timeout=10)
+
+
+class TestStealthInitScript:
+    """--stealth (linksanity-h51.6) must inject the fingerprint-evasion init
+    script into `page` exactly once, right after `browser.new_page()`, for
+    each of extract_links()/check()/crawl_page() -- and not at all when the
+    flag is left at its default (False)."""
+
+    @staticmethod
+    def _page_from(ctx: AsyncMock) -> AsyncMock:
+        """Pull out the `page` mock a context built by _mock_playwright_context
+        / _mock_crawl_context will hand back from `browser.new_page()`,
+        without actually invoking new_page() a second time."""
+        browser = ctx.__aenter__.return_value.chromium.launch.return_value
+        return browser.new_page.return_value  # type: ignore[no-any-return]
+
+    @pytest.mark.asyncio
+    async def test_extract_links_injects_when_stealth_true(self) -> None:
+        ctx = _mock_playwright_context(status=200, resolved_url=URL)
+        page = self._page_from(ctx)
+        page.eval_on_selector_all = AsyncMock(return_value=[])
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            await extract_links(URL, stealth=True)
+        page.add_init_script.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_extract_links_skips_when_stealth_false(self) -> None:
+        ctx = _mock_playwright_context(status=200, resolved_url=URL)
+        page = self._page_from(ctx)
+        page.eval_on_selector_all = AsyncMock(return_value=[])
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            await extract_links(URL)
+        page.add_init_script.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_check_injects_when_stealth_true(self) -> None:
+        ctx = _mock_playwright_context(status=200, resolved_url=URL)
+        page = self._page_from(ctx)
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            await check(URL, "f", 1, LinkType.EXTERNAL, stealth=True)
+        page.add_init_script.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_check_skips_when_stealth_false(self) -> None:
+        ctx = _mock_playwright_context(status=200, resolved_url=URL)
+        page = self._page_from(ctx)
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            await check(URL, "f", 1, LinkType.EXTERNAL)
+        page.add_init_script.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_crawl_page_injects_when_stealth_true(self) -> None:
+        ctx = _mock_crawl_context(status=200, resolved_url=URL)
+        page = self._page_from(ctx)
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            await crawl_page(URL, "f", 1, LinkType.EXTERNAL, stealth=True)
+        page.add_init_script.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_crawl_page_skips_when_stealth_false(self) -> None:
+        ctx = _mock_crawl_context(status=200, resolved_url=URL)
+        page = self._page_from(ctx)
+        with (
+            patch("linksanity.checkers.playwright._require_playwright"),
+            patch("playwright.async_api.async_playwright", return_value=ctx),
+        ):
+            await crawl_page(URL, "f", 1, LinkType.EXTERNAL)
+        page.add_init_script.assert_not_called()

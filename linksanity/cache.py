@@ -16,11 +16,15 @@ from linksanity.queue import LinkResult, LinkStatus, LinkType
 
 # Bump this whenever a change alters how a LinkResult is *classified*
 # (status, redirect_codes, http_code interpretation, etc — see linksanity-vid,
-# linksanity-f8t, linksanity-9vj for examples). A payload written under an
-# older version is treated as cold on load, so bumping this is what forces a
-# warm cache to stop replaying pre-fix classifications instead of serving
-# them for up to `cache_ttl` seconds.
-_CACHE_VERSION = 1
+# linksanity-f8t, linksanity-9vj, linksanity-h51 for examples). A payload
+# written under an older version is treated as cold on load, so bumping this
+# is what forces a warm cache to stop replaying pre-fix classifications
+# instead of serving them for up to `cache_ttl` seconds.
+#
+# v2 (linksanity-h51): a 401/403 used to classify as BROKEN and now
+# classifies as BLOCKED — a warm v1 cache would keep replaying the old
+# verdict for up to cache_ttl seconds without this bump.
+_CACHE_VERSION = 2
 
 
 class Cache:

@@ -171,6 +171,60 @@ class TestNormalizationDoesNotProduceAProposal:
         assert not any("temporary redirect" in p.detail for p in proposals)
 
 
+# ── BLOCKED produces no proposal (regression, linksanity-h51) ─────────────────
+# A blocked link (401/403 bot-wall/WAF refusal) does not reveal the resource's
+# real target, so no builder should guess a rewrite for it.
+
+class TestBlockedProducesNoProposal:
+    def test_redirect_proposals_ignore_blocked(self) -> None:
+        q = _queue(("docs/a.md", 1))
+        blocked = [_result(status=LinkStatus.BLOCKED, http_code=403)]
+        assert build_redirect_proposals(blocked, q) == []
+
+        # Contrast: the identical fixture (same resolved_url) with the
+        # default REDIRECT status DOES produce a proposal, proving the
+        # assertion above is discriminating on status and not on some other
+        # field (e.g. resolved_url) that would suppress a proposal anyway.
+        redirecting = [_result()]
+        assert len(build_redirect_proposals(redirecting, q)) == 1
+
+    def test_moved_file_proposals_ignore_blocked(self, tmp_path: Path) -> None:
+        # A genuine moved-file fixture, mirroring
+        # TestMovedFileProposals.test_unique_basename_match_is_auto_applicable:
+        # the linked path doesn't exist, but the file is found elsewhere by
+        # unique basename match.
+        (tmp_path / "docs" / "reference").mkdir(parents=True)
+        target = tmp_path / "docs" / "reference" / "setup.md"
+        target.write_text("x", encoding="utf-8")
+        source = tmp_path / "docs" / "a.md"
+        source.write_text("x", encoding="utf-8")
+
+        url = "./guide/setup.md"
+        q = _queue((str(source), 1), url=url)
+
+        # Contrast: the identical fixture with a BROKEN result DOES produce
+        # a proposal, proving this fixture is capable of a match at all.
+        broken = _broken_internal(url, str(source))
+        assert len(build_moved_file_proposals([broken], q, [target, source])) == 1
+
+        blocked = LinkResult(
+            source_file=str(source), line=1, url=url,
+            link_type=LinkType.INTERNAL, status=LinkStatus.BLOCKED, http_code=403,
+        )
+        assert build_moved_file_proposals([blocked], q, [target, source]) == []
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_wayback_proposals_ignore_blocked(self) -> None:
+        route = respx.get(url__startswith=WAYBACK_API).mock(return_value=_available())
+        q = _queue(("docs/a.md", 1), url=DEAD)
+        result = _dead(status=LinkStatus.BLOCKED, http_code=403)
+        assert await build_wayback_proposals([result], q, timeout=5) == []
+        # The builder must short-circuit on eligibility before attempting
+        # the lookup at all -- not merely happen to return no proposal.
+        assert route.call_count == 0
+
+
 # ── Moved-file resolver ───────────────────────────────────────────────────────
 
 def _broken_internal(url: str, source_file: str = "docs/a.md") -> LinkResult:

@@ -29,6 +29,7 @@ class TestConfigDefaults:
         assert cfg.retry == 2
         assert cfg.check_anchors is False
         assert cfg.check_images is False
+        assert cfg.stealth is False
         assert cfg.link_style is None
         assert cfg.max_pages == 500
         assert cfg.ignore_domains == set()
@@ -81,6 +82,10 @@ class TestCliOverrides:
     def test_check_images_override(self, tmp_path: Path) -> None:
         cfg = load_config(toml_path=tmp_path / "none.toml", check_images=True)
         assert cfg.check_images is True
+
+    def test_stealth_override(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "none.toml", stealth=True)
+        assert cfg.stealth is True
 
     def test_link_style_override(self, tmp_path: Path) -> None:
         cfg = load_config(toml_path=tmp_path / "none.toml", link_style="mkdocs")
@@ -297,6 +302,7 @@ class TestBooleanKeysUnaffectedByIntBoolRejection:
             "incremental",
             "offline",
             "annotations",
+            "stealth",
         ],
     )
     @pytest.mark.parametrize("value", ["true", "false"])

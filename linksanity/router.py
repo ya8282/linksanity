@@ -93,6 +93,7 @@ async def dispatch(
             semaphore=pw_sem,
             timeout=config.timeout,
             cell=cell,
+            stealth=config.stealth,
         )
 
     async with http_sem:

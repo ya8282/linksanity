@@ -75,6 +75,11 @@ class TestLineFor:
         # same treatment as BROKEN/ERROR (see FAILING_STATUSES in queue.py).
         assert _line_for(_result(LinkStatus.TOO_MANY_REDIRECTS)).startswith("::error ")
 
+    def test_blocked_status_is_warning_level(self) -> None:
+        # A 401/403 is a refusal, not a confirmed-dead link, so it warns
+        # instead of failing CI outright (see FAILING_STATUSES in queue.py).
+        assert _line_for(_result(LinkStatus.BLOCKED, http_code=403)).startswith("::warning ")
+
     def test_includes_file_and_line_properties(self) -> None:
         line = _line_for(_result(source_file="docs/a.md", line=42))
         assert "file=docs/a.md" in line
@@ -117,6 +122,13 @@ class TestReport:
         buf = io.StringIO()
         report([_result(LinkStatus.REDIRECT)], file=buf)
         assert buf.getvalue().startswith("::warning ")
+
+    def test_blocked_emits_warning_line_not_error(self) -> None:
+        buf = io.StringIO()
+        report([_result(LinkStatus.BLOCKED, http_code=403)], file=buf)
+        out = buf.getvalue()
+        assert out.startswith("::warning ")
+        assert "::error" not in out
 
     def test_mixed_statuses_filtered(self) -> None:
         buf = io.StringIO()

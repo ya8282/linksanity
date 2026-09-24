@@ -21,7 +21,7 @@ playwright install chromium
 ## Running tests
 
 ```bash
-pytest                    # all tests
+pytest -x -q              # all tests (the gate — see Running the gate)
 pytest tests/unit/        # unit tests only (no browser)
 pytest tests/integration/ # integration tests (browser optional)
 ```
@@ -35,7 +35,7 @@ normal state, not a broken run.
 The gate is `pytest -x -q`, run from the repository root with that dev-only
 install; this is exactly what CI's `test` job runs. If you use `uv` instead:
 run `uv sync --extra dev` once, then `uv run pytest -x -q` is equivalent —
-plain `pytest` above is canonical since it's what Setup and CI both use.
+plain `pytest -x -q` above is canonical since it's what Setup and CI both use.
 
 Expected: **1070 passed, 6 skipped**, coverage **87.07%** (floor: 80%, set in
 `pyproject.toml`). The 6 skips are the playwright-dependent tests, skipped
@@ -65,7 +65,7 @@ Both must pass before opening a PR.
 
 1. Fork and create a branch from `main`
 2. Write tests for your change
-3. Run `pytest`, `ruff check`, and `mypy` — all must pass
+3. Run the gate (see Running the gate): `pytest -x -q`, `ruff check linksanity/ tests/ scripts/`, `mypy linksanity/` — all must pass
 4. Open a PR with a short description of what changed and why
 
 ## Reporting bugs

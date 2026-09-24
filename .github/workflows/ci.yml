@@ -50,6 +50,8 @@ jobs:
         run: playwright install --with-deps chromium
 
       - name: Test (all including browser)
+        env:
+          LINKSANITY_REQUIRE_BROWSER: "1"
         run: pytest -x -q --cov=linksanity --cov-report=xml
 
       - name: Upload coverage

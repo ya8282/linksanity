@@ -38,6 +38,16 @@ class TestMissAndHit:
         assert hit.status == LinkStatus.OK
         assert hit.http_code == 200
 
+    def test_blocked_status_round_trips_through_disk(self, tmp_path: Path) -> None:
+        path = tmp_path / "cache.json"
+        cache = Cache(path, ttl=3600)
+        cache.put(_result(status=LinkStatus.BLOCKED, http_code=403))
+        cache.save()
+
+        hit = Cache(path, ttl=3600).get("https://example.com/page")
+        assert hit is not None
+        assert hit.status == LinkStatus.BLOCKED
+
 
 class TestRedirectCodes:
     def test_redirect_codes_round_trip_through_disk(self, tmp_path: Path) -> None:
@@ -167,6 +177,23 @@ class TestVersioning:
         path.write_text(json.dumps(payload), encoding="utf-8")
         cache = Cache(path, ttl=3600)
         assert cache.get("https://example.com/page") is None
+
+    def test_cache_version_is_2(self) -> None:
+        # linksanity-h51: a 401/403 used to classify as BROKEN and now
+        # classifies as BLOCKED, so a warm v1 cache must go cold.
+        assert cache_module._CACHE_VERSION == 2
+
+    def test_v1_cache_entry_is_cold(self, tmp_path: Path) -> None:
+        # A cache file written under the pre-BLOCKED classification (v1) must
+        # not keep replaying its old verdicts -- entries are discarded even
+        # though the payload is otherwise well-formed.
+        path = tmp_path / "cache.json"
+        payload = self._no_version_payload()
+        payload["version"] = 1
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        cache = Cache(path, ttl=3600)
+        assert cache.get("https://example.com/page") is None
+        assert cache.last_commit is None
 
     def test_current_version_round_trips(self, tmp_path: Path) -> None:
         path = tmp_path / "cache.json"

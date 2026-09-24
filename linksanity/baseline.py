@@ -18,6 +18,7 @@ _NOTABLE = {
     LinkStatus.ERROR,
     LinkStatus.REDIRECT,
     LinkStatus.TOO_MANY_REDIRECTS,
+    LinkStatus.BLOCKED,
 }
 _NOTABLE_VALUES = {s.value for s in _NOTABLE}
 
@@ -26,6 +27,12 @@ _NOTABLE_VALUES = {s.value for s in _NOTABLE}
 # downgrading transitions stay suppressed.
 #
 #   0 — REDIRECT: notable, but the CLI does not exit non-zero on it alone.
+#   0 — BLOCKED: notable but not a confirmed failure (see queue.py —
+#       FAILING_STATUSES deliberately excludes it, a 401/403 means the
+#       request was refused, not that the resource is gone), so it sits
+#       alongside REDIRECT rather than the failing tier. A baselined-blocked
+#       link stays suppressed unless it degrades into a FAILING_STATUSES
+#       status — e.g. the bot-wall response turning into a real 404.
 #   1 — BROKEN / ERROR / TOO_MANY_REDIRECTS: all three are in
 #       FAILING_STATUSES (queue.py) — the link is unusable and CI already
 #       exits on it — so they're ranked equal. There's no signal in this
@@ -34,6 +41,7 @@ _NOTABLE_VALUES = {s.value for s in _NOTABLE}
 #       two. Reuse FAILING_STATUSES rather than re-deriving the split.
 _SEVERITY: dict[LinkStatus, int] = {
     LinkStatus.REDIRECT: 0,
+    LinkStatus.BLOCKED: 0,
     **{status: 1 for status in FAILING_STATUSES},
 }
 

@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`LinkStatus.BLOCKED`** — HTTP 401/403 responses are now classified as
+  `BLOCKED` instead of `BROKEN`. **Behavior change:** `BLOCKED` does not
+  count toward CI exit codes or `FAILING_STATUSES` by default, unlike a 404.
+  If you were relying on "any 4xx fails the build," you will now see fewer
+  failures specifically for 401/403 responses — those links still show up in
+  reports, they just no longer fail CI on their own.
+- **`--stealth`** flag (`scan`, `crawl`) — patches common headless-Chromium
+  fingerprints to reduce false-positive `BLOCKED` results from
+  fingerprint-based bot detection; does not help against IP-reputation-based
+  bot walls. See README for details.
+
 ## [0.3.0] - 2026-08-30
 
 ### Added

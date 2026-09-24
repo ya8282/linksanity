@@ -52,11 +52,12 @@ Sample output:
 DOCS_DIR/api/guide.md
   BROKEN    line   12  ./missing.md — file not found
   REDIRECT  line   45  https://old.example.com → https://new.example.com
+  BLOCKED   line   78  https://example.com/page [403]
 
-ok=38   broken=1   redirect=1   skipped=0
+ok=38   broken=1   redirect=1   blocked=1   skipped=0
 ```
 
-Exit code `0` means every link is clean; `1` means at least one broken or redirected link was found — plug that straight into CI. Point it at a single file, a directory, or a glob; add `--check-anchors` to also validate in-page fragments, or `--format json --output results.json` for machine-readable results.
+Exit code `0` means every link is clean; `1` means at least one broken or redirected link was found — plug that straight into CI. `BLOCKED` does not affect the exit code: a blocked link means the request was refused (401/403), not that the resource is confirmed gone. Point it at a single file, a directory, or a glob; add `--check-anchors` to also validate in-page fragments, or `--format json --output results.json` for machine-readable results.
 
 The fastest way to wire this into a repo is the setup wizard, which detects your docs directory and writes a GitHub Actions workflow for you:
 

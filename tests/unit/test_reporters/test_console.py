@@ -126,6 +126,16 @@ class TestRedirect:
         assert "[browser]" in out
 
 
+# ── Blocked links ─────────────────────────────────────────────────────────────
+
+class TestBlocked:
+    def test_blocked_label_appears_not_broken(self) -> None:
+        r = _result(LinkStatus.BLOCKED, http_code=403)
+        out = _capture([r])
+        assert "BLOCKED" in out
+        assert "BROKEN" not in out
+
+
 # ── OK and skipped are silent ─────────────────────────────────────────────────
 
 class TestSilent:
@@ -209,6 +219,12 @@ class TestSummary:
     def test_summary_always_present_with_results(self) -> None:
         out = _capture([_result(LinkStatus.OK)])
         assert "ok=" in out
+
+    def test_blocked_does_not_count_toward_broken(self) -> None:
+        r = _result(LinkStatus.BLOCKED, http_code=403)
+        out = _capture([r])
+        assert "broken=0" in out
+        assert "blocked=1" in out
 
 
 # ── File output (no color) ────────────────────────────────────────────────────

@@ -114,6 +114,14 @@ class TestMarkdownDetails:
         out = _capture([r])
         assert "cell 3, line 99" in out
 
+    def test_blocked_shows_own_icon(self) -> None:
+        r = _result(LinkStatus.BLOCKED, url="https://blocked.example.com", http_code=403)
+        out = _capture([r])
+        assert "## Details" in out
+        assert "🚫" in out
+        details_line = next(line for line in out.splitlines() if "blocked.example.com" in line)
+        assert "🚫" in details_line
+
     def test_ok_links_not_in_details(self) -> None:
         results = [
             _result(LinkStatus.OK, url="https://ok.example.com"),
@@ -286,3 +294,9 @@ class TestMarkdownSummaryCounts:
         out = _capture([r])
         # broken count should be 1
         assert "broken" in out
+
+    def test_blocked_does_not_count_as_broken(self) -> None:
+        r = _result(LinkStatus.BLOCKED, http_code=403)
+        out = _capture([r])
+        assert "| ❌ broken | 0 |" in out
+        assert "| 🚫 blocked | 1 |" in out

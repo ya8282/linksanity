@@ -16,6 +16,7 @@ _NOTABLE = {
     LinkStatus.ERROR,
     LinkStatus.REDIRECT,
     LinkStatus.TOO_MANY_REDIRECTS,
+    LinkStatus.BLOCKED,
 }
 
 
@@ -33,6 +34,7 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
     broken = counts[LinkStatus.BROKEN] + counts[LinkStatus.ERROR]
     redirect = counts[LinkStatus.REDIRECT]
     too_many = counts[LinkStatus.TOO_MANY_REDIRECTS]
+    blocked = counts[LinkStatus.BLOCKED]
     skipped = counts[LinkStatus.SKIPPED]
     total = len(results)
 
@@ -42,6 +44,7 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
     _w(out, f"| ❌ broken | {broken} |\n")
     _w(out, f"| ↗ redirect | {redirect} |\n")
     _w(out, f"| ⚠ too many redirects | {too_many} |\n")
+    _w(out, f"| 🚫 blocked | {blocked} |\n")
     _w(out, f"| ⏭ skipped | {skipped} |\n")
     _w(out, f"| **total** | **{total}** |\n")
 
@@ -59,6 +62,8 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
             status_icon = "❌" if r.status in (LinkStatus.BROKEN, LinkStatus.ERROR) else "↗"
             if r.status == LinkStatus.TOO_MANY_REDIRECTS:
                 status_icon = "⚠"
+            if r.status == LinkStatus.BLOCKED:
+                status_icon = "🚫"
             detail = _detail(r)
             line_col = f"cell {r.cell}, line {r.line}" if r.cell is not None else f"{r.line}"
             _w(

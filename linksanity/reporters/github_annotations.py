@@ -13,7 +13,7 @@ _MAX_PER_LEVEL = 10  # GitHub renders at most 10 annotations per level per step
 # here — see FAILING_STATUSES in queue.py, which is the single source of
 # truth for what counts as a failure across the CLI's exit codes too.
 _ERROR_STATUSES = FAILING_STATUSES
-_WARNING_STATUSES = {LinkStatus.REDIRECT}
+_WARNING_STATUSES = {LinkStatus.REDIRECT, LinkStatus.BLOCKED}
 
 
 def _esc(value: str) -> str:

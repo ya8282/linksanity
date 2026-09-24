@@ -6,7 +6,7 @@ Detect broken links and redirects in live deployed sites or source files. Don't 
 
 ## Features
 
-- **Static scan or live crawl** — check source files directly, or crawl a deployed site with a headless browser (`--stealth` available on both to dodge common bot-fingerprint checks)
+- **Static scan or live crawl** — check source files directly, or crawl a deployed site with a headless browser (`--stealth` dodges common bot-fingerprint checks; on `scan` it only applies to links routed through `--js-domains` / `js_domains` in `linksanity.toml`)
 - **Fix mode** — `linksanity fix --write` auto-applies confident redirect and moved-file fixes in place; dry run by default
 - **Anchor checking** — `--check-anchors` validates in-page fragment targets, not just the links themselves
 - **CI integration** — exit codes for scripting, a `linksanity init` setup wizard that writes a GitHub Actions workflow around the [ya8282/linksanity-action](https://github.com/ya8282/linksanity-action), `--github-issue` to file/update a summary issue, and `--annotations` for inline `::error`/`::warning` output
@@ -45,7 +45,7 @@ pip install "linksanity[browser]"
 playwright install chromium
 ```
 
-Pass `--stealth` to `scan`/`crawl` to patch the common headless-Chromium fingerprints (`navigator.webdriver`, plugins, languages, etc.) that some sites use for bot detection. It only helps against fingerprint-based checks — it does not help against IP-reputation-based bot walls (iso.org is a confirmed example of the latter).
+Pass `--stealth` to `scan`/`crawl` to patch the common headless-Chromium fingerprints (`navigator.webdriver`, plugins, languages, etc.) that some sites use for bot detection. It only helps against fingerprint-based checks — it does not help against IP-reputation-based bot walls (iso.org is a confirmed example of the latter). On `scan`, it only affects URLs routed to Playwright via `--js-domains` (or `js_domains` in `linksanity.toml`); plain HTTP-checked links are unaffected. On `crawl`, it applies to the same-domain pages rendered during the crawl; external links, which are HTTP-checked, are unaffected.
 
 ## Quick start
 

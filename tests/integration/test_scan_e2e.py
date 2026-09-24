@@ -148,6 +148,23 @@ class TestScanFlags:
         result = runner.invoke(app, ["scan", str(f), "--github-issue"])
         assert result.exit_code == 2
 
+    def test_github_reporter_failure_exits_3_distinct_from_broken_links(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A clean scan (no broken links) whose --github-issue reporter fails
+        # (here: no GITHUB_TOKEN) must NOT look like exit 1 (broken links
+        # found) or exit 0 (nothing wrong) -- it gets its own code so "we
+        # could not tell you" is distinguishable from both.
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        f = tmp_path / "a.md"
+        f.write_text("# hi\n")
+        result = runner.invoke(
+            app, ["scan", str(f), "--github-issue", "--repo", "owner/repo"]
+        )
+        assert result.exit_code == 3, result.output
+        assert "github reporter failed" in result.output
+        assert "GITHUB_TOKEN" in result.output
+
 
 # ── Output format tests ──────────────────────────────────────────────────────
 

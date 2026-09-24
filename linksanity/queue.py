@@ -188,14 +188,21 @@ class LinkQueue:
         so this looks the key up directly rather than recomputing it --
         `_dedupe_key` needs `root`, which a LinkResult does not carry.
 
-        Falls back to `sources(url)` (every occurrence of the raw URL
-        string, regardless of dedupe key) when no matching key is found --
-        e.g. a LinkResult built outside the add()/pending() pipeline, as
-        some tests do directly.
+        Raises `ValueError` when no matching key is found -- the triple
+        does not match any representative this queue's `add()` recorded,
+        meaning the LinkResult was not issued by this queue. That is a
+        caller bug (e.g. a LinkResult built outside the add()/pending()
+        pipeline), not a recoverable state: silently falling back to
+        `sources(url)` here previously caused duplicate fix proposals
+        (see linksanity-rml).
         """
         key = self._key_by_representative.get((url, source_file, line))
         if key is None:
-            return self.sources(url)
+            raise ValueError(
+                f"sources_for_result: no result for (url={url!r}, "
+                f"source_file={source_file!r}, line={line!r}) was issued by "
+                "this queue"
+            )
         return list(self._pending_sources.get(key, []))
 
     def record(self, result: LinkResult) -> None:

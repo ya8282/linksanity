@@ -50,14 +50,113 @@ def _config(**kwargs: object) -> Config:
     return Config(github_issue=True, github_repo=REPO, **kwargs)  # type: ignore[arg-type]
 
 
-# ── No broken links — no API call ────────────────────────────────────────────
+# ── No broken links — resolve any standing issue, else no-op ────────────────
 
 class TestNoBroken:
     @respx.mock
-    def test_no_broken_makes_no_api_call(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_no_broken_no_existing_issue_makes_no_writes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
-        # If any HTTP call is made, respx will raise because no routes are registered
+        # The clean-run path still searches for a standing issue to resolve,
+        # but with none found it must not comment or close anything. If any
+        # write call is made, respx raises because no write routes are
+        # registered.
+        respx.get(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(200, json=[])
+        )
         report([_result(LinkStatus.OK, http_code=None)], _config())
+
+    @respx.mock
+    def test_no_broken_closes_existing_open_issue(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
+        existing = [{"number": 7, "title": "[linksanity] 1 failing link(s) found"}]
+        search = respx.get(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(200, json=existing)
+        )
+        commented = respx.post(f"{API}/repos/{REPO}/issues/7/comments").mock(
+            return_value=httpx.Response(201, json={"id": 1})
+        )
+        closed = respx.patch(f"{API}/repos/{REPO}/issues/7").mock(
+            return_value=httpx.Response(200, json={"number": 7, "state": "closed"})
+        )
+        report([_result(LinkStatus.OK, http_code=None)], _config())
+        # Search must be scoped to open issues only, so a second clean run
+        # (after this one closes the issue) will not find it again.
+        assert search.calls[0].request.url.params["state"] == "open"
+        assert commented.called
+        comment_body = json.loads(commented.calls[0].request.content)["body"]
+        assert "resolve" in comment_body.lower()
+        assert closed.called
+        close_payload = json.loads(closed.calls[0].request.content)
+        assert close_payload == {"state": "closed"}
+        # Comment before close, in that order.
+        assert commented.calls[0].request.url.path.endswith("/comments")
+        assert closed.calls[0].request.url.path == "/repos/owner/repo/issues/7"
+
+    @respx.mock
+    def test_no_broken_missing_token_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        with pytest.raises(RuntimeError, match="GITHUB_TOKEN"):
+            report([_result(LinkStatus.OK, http_code=None)], _config())
+
+    @respx.mock
+    def test_second_clean_run_after_close_is_noop(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
+        # The issue this run's search would have matched was closed by the
+        # first clean run, so the open-issues listing no longer contains it.
+        respx.get(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(200, json=[])
+        )
+        report([_result(LinkStatus.OK, http_code=None)], _config())
+
+    @respx.mock
+    def test_no_broken_ignores_human_closed_issue(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
+        # A human already closed the standing issue by hand. The open-only
+        # search never returns it, so it must not be reopened or
+        # re-commented on.
+        respx.get(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(200, json=[])
+        )
+        report([_result(LinkStatus.OK, http_code=None)], _config())
+
+    @respx.mock
+    def test_no_broken_resolve_search_failure_propagates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
+        respx.get(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(500, json={"message": "boom"})
+        )
+        with pytest.raises(httpx.HTTPStatusError):
+            report([_result(LinkStatus.OK, http_code=None)], _config())
+
+    @respx.mock
+    def test_no_broken_close_failure_propagates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
+        existing = [{"number": 7, "title": "[linksanity] 1 failing link(s) found"}]
+        respx.get(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(200, json=existing)
+        )
+        respx.post(f"{API}/repos/{REPO}/issues/7/comments").mock(
+            return_value=httpx.Response(201, json={"id": 1})
+        )
+        respx.patch(f"{API}/repos/{REPO}/issues/7").mock(
+            return_value=httpx.Response(500, json={"message": "boom"})
+        )
+        with pytest.raises(httpx.HTTPStatusError):
+            report([_result(LinkStatus.OK, http_code=None)], _config())
 
 
 # ── Token validation ──────────────────────────────────────────────────────────
@@ -190,7 +289,7 @@ class TestFailingStatusesParity:
         assert "3" in payload["title"]
 
     @respx.mock
-    def test_only_ok_redirect_skipped_makes_no_api_call(
+    def test_only_ok_redirect_skipped_makes_no_writes(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
@@ -199,7 +298,12 @@ class TestFailingStatusesParity:
             _result(status=LinkStatus.REDIRECT, http_code=301),
             _result(status=LinkStatus.SKIPPED, http_code=None),
         ]
-        # If any HTTP call is made, respx will raise because no routes are registered
+        # No failing statuses -> a clean-run search for a standing issue to
+        # resolve, but nothing found. If any write is made, respx raises
+        # because no write routes are registered.
+        respx.get(f"{API}/repos/{REPO}/issues").mock(
+            return_value=httpx.Response(200, json=[])
+        )
         report(results, _config())
 
     @respx.mock

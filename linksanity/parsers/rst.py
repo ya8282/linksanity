@@ -60,20 +60,20 @@ def extract_links(path: Path, *, include_images: bool = False) -> list[tuple[str
             seen.add(pair)
             results.append(pair)
 
-    for node in document.findall(reference):
-        uri = node.get("refuri", "")
+    for ref_node in document.findall(reference):
+        uri = ref_node.get("refuri", "")
         if isinstance(uri, str) and uri:
-            add(uri, node)
+            add(uri, ref_node)
 
-    for node in document.findall(target):
-        uri = node.get("refuri", "")
+    for target_node in document.findall(target):
+        uri = target_node.get("refuri", "")
         if isinstance(uri, str) and uri:
-            add(uri, node)
+            add(uri, target_node)
 
     if include_images:
-        for node in document.findall(image):
-            uri = node.get("uri", "")
+        for image_node in document.findall(image):
+            uri = image_node.get("uri", "")
             if isinstance(uri, str) and uri:
-                add(uri, node)
+                add(uri, image_node)
 
     return results

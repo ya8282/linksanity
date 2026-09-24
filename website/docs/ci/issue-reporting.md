@@ -46,6 +46,10 @@ permissions:
 
 See [GitHub Actions](./github-actions.md) for a full workflow step wiring this up on `if: failure()`.
 
+### If the reporter itself fails
+
+If the `--github-issue` reporter can't do its job — a missing `GITHUB_TOKEN`, a non-2xx response from the GitHub API, or similar — linksanity 0.4.0 and later exits `3` instead of the usual `0`/`1` (earlier versions exit `1`), and prints the reason to stderr. This keeps "the reporter failed to tell you" distinct from "there was nothing to tell you": a plain `0`/`1` exit would look like a clean or a normal broken-link run even though no issue was actually created or updated. See [Exit codes](../guides/output-modes.md#exit-codes) for the full table.
+
 ## `--annotations`
 
 Pass `--annotations` (or rely on its default, which auto-detects CI and enables itself inside GitHub Actions) to emit `::error::`/`::warning::` workflow commands for each failing or redirected link, so failures show up inline on the diff view without downloading an artifact. `--no-annotations` disables it explicitly. See the [CLI reference](../guides/cli-reference.md) for the full flag table.

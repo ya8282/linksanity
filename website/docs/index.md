@@ -22,7 +22,7 @@ ok=38   broken=1   redirect=1   skipped=0
 - **Static scan** — parse 8 file formats (see Supported formats below) without a browser
 - **Live crawl** — follow links on a deployed site using a headless browser (Playwright)
 - **Fix, don't just report** — `linksanity fix` rewrites permanently-redirected URLs and moved-file links in place (see [Fixing broken links](./recipes/fixing-broken-links.md))
-- **Exit codes** — `0` = clean, `1` = broken links found (ideal for CI)
+- **Exit codes** — `0` = clean, `1` = broken links found (ideal for CI); see [Exit codes](./guides/output-modes.md#exit-codes) for the full table, including `2` (invocation error) and `3` (`--github-issue` reporter failed)
 - **Multiple formats** — console (Rich), JSON, CSV; optional Markdown summary report
 - **Anchor validation** — opt-in `--check-anchors` flag
 - **GitHub Issues** — create or update an issue summarising failing links (broken, checker errors, and redirect loops)

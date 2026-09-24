@@ -21,10 +21,10 @@ linksanity is designed to be a clean tool call for AI agents. Use `--format json
 
 **Exit codes** are the primary signal — but they mean different things for `scan`/`crawl` than for `fix`:
 
-| Command | `0` | `1` | `2` |
-|---|---|---|---|
-| `scan`, `crawl` | all links OK | one or more broken links | invocation error |
-| `fix` | nothing to fix | proposals exist (dry run), or were applied (`--write`) | invocation error, or `--write` refused a dirty tree |
+| Command | `0` | `1` | `2` | `3` |
+|---|---|---|---|---|
+| `scan`, `crawl` | all links OK | one or more broken links | invocation error | `--github-issue` reporter failed |
+| `fix` | nothing to fix | proposals exist (dry run), or were applied (`--write`) | invocation error, or `--write` refused a dirty tree | n/a — `fix` has no `--github-issue` |
 
 A `fix` exit of `1` is not a failure signal by itself — check `auto_applicable` in the JSON output (below) or the diff to see what happened.
 

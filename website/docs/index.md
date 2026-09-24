@@ -40,7 +40,7 @@ linksanity is modular — install only what you need for your use case.
 | **Scanner only** | `pip install linksanity` | `linksanity scan ./docs/` | [Quick start](./guides/getting-started.md) |
 | **Fixer** | already included | `linksanity fix ./docs/` (dry run; add `--write` to apply) | [Fixing broken links](./recipes/fixing-broken-links.md) |
 | **Browser crawl** | `pip install "linksanity[browser]"` then `playwright install chromium` | `linksanity crawl https://docs.example.com` | [Crawl a live site](./guides/getting-started.md) |
-| **Pre-commit hook** | already included; add to `.pre-commit-config.yaml` | `repo: https://github.com/ya8282/linksanity`, `rev: v0.3.0`, `hooks: [{id: linksanity}]` | [Pre-commit hook](./ci/pre-commit.md) |
+| **Pre-commit hook** | already included; add to `.pre-commit-config.yaml` | `repo: https://github.com/ya8282/linksanity`, `rev: v0.4.0`, `hooks: [{id: linksanity}]` | [Pre-commit hook](./ci/pre-commit.md) |
 | **GitHub Action** | none — no local install needed | `- uses: ya8282/linksanity-action@v1` with `paths: docs/` | [CI integration](./ci/github-actions.md) — see the [ya8282/linksanity-action](https://github.com/ya8282/linksanity-action) repo |
 | **Library API** | `pip install linksanity` | `from linksanity import scan_paths` | [Use as a library](./agents/index.md) (note: no `linksanity.toml` auto-discovery, unlike the CLI) |
 

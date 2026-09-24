@@ -11,7 +11,7 @@ Run linksanity locally before each commit using [pre-commit](https://pre-commit.
 # .pre-commit-config.yaml (in the consuming repo)
 repos:
   - repo: https://github.com/ya8282/linksanity
-    rev: v0.3.0
+    rev: v0.4.0
     hooks:
       - id: linksanity
 ```

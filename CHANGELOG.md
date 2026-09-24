@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-09-24
 
 ### Added
 
@@ -19,6 +19,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fingerprints to reduce false-positive `BLOCKED` results from
   fingerprint-based bot detection; does not help against IP-reputation-based
   bot walls. See README for details.
+- **Documentation site** published at
+  [ya8282.github.io/linksanity](https://ya8282.github.io/linksanity/) —
+  installation, getting started, CLI reference, configuration, recipes, CI
+  integration, driving linksanity from an agent, internals, and
+  troubleshooting, deployed via GitHub Pages. The README is trimmed to an
+  at-a-glance Features list plus a pointer at the site.
+- **Config key warnings** — `load_config` now warns on stderr about
+  `linksanity.toml` keys it does not read, so a misspelled key or a stray
+  `[tool.linksanity]` table no longer succeeds silently. `output`, `report`,
+  `github_issue`, and `github_repo` are TOML-only-excluded by design and are
+  expected to trigger this warning too — that is not a bug.
+- Docs: `uv` and `pipx` install methods are now documented alongside `pip`,
+  including the `browser` extra.
+
+### Changed
+
+- The GitHub issue reporter now comments on and closes the standing
+  link-rot issue on any clean `--github-issue` run, instead of doing
+  nothing. Docs show how to gate the CI step to
+  `if: ${{ !cancelled() && github.event_name == 'schedule' }}` so it is only
+  the scheduled run that closes the issue, without firing on
+  `push`/`pull_request` runs. **Behavior change:** a step still gated on
+  `if: failure()` will not pick up this close — see the GitHub Actions docs
+  for the updated gating.
+- **Exit code 3** for a failed `--github-issue` report (missing
+  `GITHUB_TOKEN`, a non-2xx GitHub API response, etc.). **Behavior change:**
+  previously exited 1, indistinguishable from "broken links found." A CI
+  step can now tell "we could not tell you" apart from "nothing to tell
+  you." Token and `github_repo` validation also now run before the
+  clean-run check rather than after it, so **a clean `--github-issue` run
+  with no `GITHUB_TOKEN` set (or an invalid `github_repo`) now exits 3
+  instead of silently exiting 0** — this can surface on local runs or
+  PR/push jobs that set `--github-issue` without a token.
+
+### Fixed
+
+- `init --paths`: reject absolute paths and `..` components, which
+  previously passed validation but produced a workflow whose `paths:` value
+  matches nothing (or escapes the checkout) on the runner
+- `init --paths`: more precise refusal messages — names the actual
+  offending character instead of a generic list, calls out glob
+  metacharacters beyond `*` (`?`, `!`, `+`, brackets), explains that paths
+  are literal strings rather than globs, and diagnoses an all-slash or
+  empty value instead of falling through to the generic message
+- `init --dry-run` no longer refuses on a workflow or baseline file that
+  already exists — it was never going to write to either
+- `init`'s cost estimate names the pinned `linksanity-action` version
+  instead of claiming "CI installs the latest release"
+- `init` and the scanner no longer descend into *any* directory symlink
+  (self-referential or not) — a symlinked subdirectory inside a scanned or
+  probed tree is no longer walked; the symlinked file entries themselves are
+  still counted/scanned. Previously a symlink loop inflated a probe
+  directory's file count and could loop. **Behavior change:** a docs tree
+  that reaches other content only through a symlinked directory will see
+  fewer files proposed by `init` and scanned by `scan`/`fix` than before
+- The scanner now prunes vendored and dot directories the same way
+  `init`'s detection does, so a directory `init` proposed is not then
+  scanned in full
+- Root-relative links (e.g. `/guides/output-modes`) now resolve against the
+  scan root instead of the filesystem root
+- Each scanned pattern gets its own root instead of one corpus-wide common
+  path, fixing false matches when unrelated trees were scanned together
+  (e.g. `scan /tmp /usr`)
+- A baselined link that degrades to a worse status (e.g. a suppressed
+  redirect that becomes broken) now re-fails instead of staying suppressed
+- Config: a bool value for an integer key (e.g. `workers = true`) is now
+  rejected instead of silently becoming `1`
+- Config: a non-integral float for an integer key (e.g. `workers = 2.5`) is
+  now rejected instead of being silently truncated
+- Domains file: an indented `#` line is now treated as a comment, matching
+  a flush-left one
+- Dedupe now keys source-dependent links (root-relative, anchor, same
+  relative text under different directories) on the resolved base rather
+  than the raw URL, so they are all checked instead of collapsing into one
+  result; the fixer no longer proposes the same fix multiple times for a
+  URL that yields several results
 
 ## [0.3.0] - 2026-08-30
 
@@ -154,6 +230,7 @@ linksanity in other tools.
 Initial public release. `scan` and `crawl` over Markdown, reStructuredText, and
 HTML, with Playwright-backed checking for JS-rendered pages.
 
+[0.4.0]: https://github.com/ya8282/linksanity/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ya8282/linksanity/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/ya8282/linksanity/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ya8282/linksanity/compare/v0.1.1...v0.2.0

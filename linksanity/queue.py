@@ -12,12 +12,16 @@ class LinkStatus(Enum):
     TOO_MANY_REDIRECTS = "too_many_redirects"
     SKIPPED = "skipped"
     ERROR = "error"
+    BLOCKED = "blocked"
 
 
 # What counts as a failure for exit codes and CI-facing reporters. A link
 # that exceeds --max-redirects never resolved, so it's unusable — same as
 # BROKEN/ERROR — even though it's reported separately from the "broken"
 # count in human-facing summaries (see markdown_reporter / console reporter).
+# BLOCKED is deliberately excluded: a 401/403 means a request was refused
+# (bot-wall/WAF), not that the resource is confirmed gone, so it shouldn't
+# fail CI on its own.
 FAILING_STATUSES = frozenset(
     {LinkStatus.BROKEN, LinkStatus.ERROR, LinkStatus.TOO_MANY_REDIRECTS}
 )
@@ -25,6 +29,8 @@ FAILING_STATUSES = frozenset(
 
 def classify_status(code: int, was_redirected: bool) -> LinkStatus:
     """Classify an HTTP outcome: a 4xx/5xx code beats a redirect."""
+    if code in (401, 403):
+        return LinkStatus.BLOCKED
     if code >= 400:
         return LinkStatus.BROKEN
     if was_redirected:

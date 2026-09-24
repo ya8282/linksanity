@@ -2,7 +2,14 @@
 
 import pytest
 
-from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
+from linksanity.queue import (
+    FAILING_STATUSES,
+    LinkQueue,
+    LinkResult,
+    LinkStatus,
+    LinkType,
+    classify_status,
+)
 
 
 def make_result(**kwargs: object) -> LinkResult:
@@ -25,7 +32,28 @@ class TestLinkStatus:
         values = {s.value for s in LinkStatus}
         assert values == {
             "ok", "broken", "redirect", "too_many_redirects", "skipped", "error",
+            "blocked",
         }
+
+
+class TestClassifyStatus:
+    def test_401_is_blocked(self) -> None:
+        assert classify_status(401, False) == LinkStatus.BLOCKED
+
+    def test_403_is_blocked(self) -> None:
+        assert classify_status(403, False) == LinkStatus.BLOCKED
+
+    def test_404_is_broken(self) -> None:
+        assert classify_status(404, False) == LinkStatus.BROKEN
+
+    def test_500_is_broken(self) -> None:
+        assert classify_status(500, False) == LinkStatus.BROKEN
+
+    def test_redirect_still_detected(self) -> None:
+        assert classify_status(200, True) == LinkStatus.REDIRECT
+
+    def test_blocked_not_in_failing_statuses(self) -> None:
+        assert LinkStatus.BLOCKED not in FAILING_STATUSES
 
 
 class TestLinkType:
@@ -88,6 +116,15 @@ class TestLinkQueue:
         assert summary["ok"] == 2
         assert summary["broken"] == 1
         assert summary["redirect"] == 0
+
+    def test_summary_counts_blocked(self) -> None:
+        q = LinkQueue()
+        q.record(make_result(status=LinkStatus.BLOCKED))
+        q.record(make_result(status=LinkStatus.BLOCKED))
+        q.record(make_result(status=LinkStatus.OK))
+        summary = q.summary()
+        assert summary["blocked"] == 2
+        assert summary["ok"] == 1
 
     def test_sources_unknown_url_returns_empty(self) -> None:
         q = LinkQueue()

@@ -140,9 +140,11 @@ permissions:
   issues: write
 ```
 
+Gate this step to the scheduled trigger with `if: ${{ !cancelled() && github.event_name == 'schedule' }}`, not `if: failure()`: it must also run on a clean scheduled run so it can comment that the links now resolve and close the standing issue, but it must not run on `push`/`pull_request` runs, where a clean PR would wrongly close an issue opened by main's schedule and a fork PR's read-only token would turn the step red trying to write to it.
+
 ```yaml
-      - name: Report failing links
-        if: failure()
+      - name: Update the link-rot issue
+        if: ${{ !cancelled() && github.event_name == 'schedule' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

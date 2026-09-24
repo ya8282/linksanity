@@ -44,7 +44,7 @@ permissions:
   issues: write
 ```
 
-See [GitHub Actions](./github-actions.md) for a full workflow step wiring this up on `if: failure()`.
+See [GitHub Actions](./github-actions.md) for a full "Update the link-rot issue" workflow step, gated to `if: ${{ !cancelled() && github.event_name == 'schedule' }}` so it also runs on clean scheduled scans and closes the issue once links resolve, without firing on PR/push runs.
 
 ### If the reporter itself fails
 

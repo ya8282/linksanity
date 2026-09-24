@@ -345,6 +345,24 @@ class TestDispatchPlaywright:
         assert result.status == LinkStatus.OK
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("stealth", [True, False])
+    async def test_stealth_forwarded_to_playwright_check(self, stealth: bool) -> None:
+        import asyncio
+        config = Config(js_domains={"spa.example.com"}, timeout=5, stealth=stealth)
+        sems = asyncio.Semaphore(5), asyncio.Semaphore(2)
+        ok_result = LinkResult(
+            source_file="f", line=1, url="https://spa.example.com/page",
+            link_type=LinkType.EXTERNAL, status=LinkStatus.OK,
+        )
+        mock_check = AsyncMock(return_value=ok_result)
+        with patch("linksanity.checkers.playwright.check", mock_check):
+            await dispatch(
+                "https://spa.example.com/page", "f", 1,
+                LinkType.EXTERNAL, config, *sems,
+            )
+        assert mock_check.call_args.kwargs["stealth"] is stealth
+
+    @pytest.mark.asyncio
     async def test_subdomain_js_domain_routes_to_playwright(self) -> None:
         import asyncio
         config = Config(js_domains={"example.com"}, timeout=5)

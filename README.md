@@ -43,7 +43,7 @@ docs/api/guide.md
 ok=38   broken=1   redirect=1   skipped=0
 ```
 
-Exit code `0` means every link is clean; `1` means at least one broken or redirected link was found — plug that straight into CI. See [Exit codes](https://ya8282.github.io/linksanity/guides/output-modes#exit-codes) for the full table, including `2` and `3`. Point it at a single file, a directory, or a glob; add `--check-anchors` to also validate in-page fragments, or `--format json --output results.json` for machine-readable results.
+Exit code `0` means every link is clean; `1` means at least one broken or redirected link was found — plug that straight into CI. Point it at a single file, a directory, or a glob; add `--check-anchors` to also validate in-page fragments, or `--format json --output results.json` for machine-readable results.
 
 The fastest way to wire this into a repo is the setup wizard, which detects your docs directory and writes a GitHub Actions workflow for you:
 

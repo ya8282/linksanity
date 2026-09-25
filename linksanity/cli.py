@@ -640,7 +640,11 @@ def fix(
         raise typer.Exit(1)
 
     _check_clean_tree(proposals, force)
-    applied, modified = apply_proposals(proposals)
+    try:
+        applied, modified = apply_proposals(proposals)
+    except OSError as exc:
+        typer.echo(f"[linksanity] cannot write source file: {exc}", err=True)
+        raise typer.Exit(2) from exc
 
     if config.format == "json":
         _emit(_render_fix_output(proposals, config.format), config.output)
@@ -1137,11 +1141,18 @@ def init_cmd(
                 err=True,
             )
         if write_baseline and baseline_path.exists():
-            typer.echo(
-                f"[linksanity] note: {baseline_path} already exists; a real run would "
-                "refuse (exit 2)",
-                err=True,
-            )
+            if yes:
+                typer.echo(
+                    f"[linksanity] note: {baseline_path} already exists; a real run "
+                    "would refuse (exit 2)",
+                    err=True,
+                )
+            else:
+                typer.echo(
+                    f"[linksanity] note: {baseline_path} already exists; a real run "
+                    "would ask before overwriting",
+                    err=True,
+                )
         typer.echo(workflow_text, nl=False)
         if write_baseline:
             broken_count = sum(1 for r in results if r.status in FAILING_STATUSES)

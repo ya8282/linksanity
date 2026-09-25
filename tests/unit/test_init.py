@@ -667,7 +667,8 @@ def test_init_cli_interactive_dry_run_with_existing_baseline_does_not_prompt(
     assert _BASELINE_PATH.read_text() == "OLD BASELINE\n"
     assert "Overwrite it?" not in result.output
     assert str(_BASELINE_PATH) in result.output
-    assert "a real run would refuse" in result.output
+    assert "a real run would ask before overwriting" in result.output
+    assert "a real run would refuse" not in result.output
 
 
 def test_init_cli_no_measure_skips_scan_estimate_and_baseline(

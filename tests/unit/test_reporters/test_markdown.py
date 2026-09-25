@@ -94,6 +94,60 @@ class TestMarkdownDetails:
         out = _capture([r])
         assert "new.example.com" in out
 
+    def test_original_url_not_duplicated_in_chain(self) -> None:
+        # The original URL is already the URL column; the Detail cell must
+        # not repeat it as the first hop. See linksanity-h51.12.
+        r = _result(
+            LinkStatus.REDIRECT,
+            url="http://github.com",
+            redirect_chain=["http://github.com", "https://github.com/"],
+            redirect_codes=[301],
+            http_code=200,
+        )
+        out = _capture([r])
+        assert out.count("github.com") == 2  # URL column once, Detail hop once
+
+    def test_one_hop_shows_single_redirect_code(self) -> None:
+        r = _result(
+            LinkStatus.REDIRECT,
+            url="http://github.com",
+            redirect_chain=["http://github.com", "https://github.com/"],
+            redirect_codes=[301],
+            http_code=200,
+        )
+        out = _capture([r])
+        assert "`[301]`" in out
+        assert "[200]" not in out
+
+    def test_two_hops_shows_both_redirect_codes(self) -> None:
+        r = _result(
+            LinkStatus.REDIRECT,
+            url="http://example.com",
+            redirect_chain=[
+                "http://example.com",
+                "https://example.com",
+                "https://example.com/final",
+            ],
+            redirect_codes=[301, 302],
+            http_code=200,
+        )
+        out = _capture([r])
+        assert "`[301, 302]`" in out
+
+    def test_missing_redirect_codes_omits_suffix(self) -> None:
+        r = _result(
+            LinkStatus.REDIRECT,
+            url="http://example.com",
+            redirect_chain=["http://example.com", "https://example.com/"],
+            redirect_codes=None,
+            http_code=200,
+        )
+        out = _capture([r])
+        details_line = next(
+            line for line in out.splitlines() if "https://example.com/" in line
+        )
+        assert "`[" not in details_line
+
     def test_error_message_in_detail(self) -> None:
         r = _result(LinkStatus.ERROR, error="connection refused")
         out = _capture([r])
@@ -200,8 +254,9 @@ class TestMarkdownEscaping:
     def test_pipe_in_redirect_chain_escaped(self) -> None:
         r = _result(
             LinkStatus.REDIRECT,
-            redirect_chain=["https://a.example.com/x|y", "https://b.example.com"],
-            http_code=301,
+            url="https://a.example.com",
+            redirect_chain=["https://a.example.com", "https://b.example.com/x|y"],
+            redirect_codes=[301],
         )
         out = _capture([r])
         assert "x\\|y" in out

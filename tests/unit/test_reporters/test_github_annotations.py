@@ -104,6 +104,27 @@ class TestLineFor:
         line = _line_for(_result(url="https://gone.example.com"))
         assert "https://gone.example.com" in line
 
+    def test_redirect_shows_redirect_codes_not_final_code(self) -> None:
+        # http_code is the final response code, not the redirect's own code.
+        # See linksanity-h51.12.
+        line = _line_for(
+            _result(LinkStatus.REDIRECT, http_code=200, redirect_codes=[301])
+        )
+        assert "redirect [301]" in line
+        assert "HTTP 200" not in line
+
+    def test_redirect_two_hops_shows_both_codes(self) -> None:
+        line = _line_for(
+            _result(LinkStatus.REDIRECT, http_code=200, redirect_codes=[301, 302])
+        )
+        assert "redirect [301, 302]" in line
+
+    def test_redirect_without_redirect_codes_falls_back_to_http_code(self) -> None:
+        line = _line_for(
+            _result(LinkStatus.REDIRECT, http_code=200, redirect_codes=None)
+        )
+        assert "HTTP 200" in line
+
 
 # ── report() ──────────────────────────────────────────────────────────────────
 

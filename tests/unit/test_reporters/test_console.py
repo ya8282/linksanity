@@ -125,6 +125,59 @@ class TestRedirect:
         out = _capture([r])
         assert "[browser]" in out
 
+    def test_original_url_not_duplicated(self) -> None:
+        # The original URL is printed once by the caller; _detail must not
+        # repeat it as the first hop of the chain. See linksanity-h51.12.
+        r = _result(
+            LinkStatus.REDIRECT,
+            url="http://github.com",
+            redirect_chain=["http://github.com", "https://github.com/"],
+            redirect_codes=[301],
+            http_code=200,
+        )
+        out = _capture([r])
+        assert out.count("github.com") == 2  # once bare, once as https://github.com/
+
+    def test_one_hop_shows_single_redirect_code(self) -> None:
+        r = _result(
+            LinkStatus.REDIRECT,
+            url="http://github.com",
+            redirect_chain=["http://github.com", "https://github.com/"],
+            redirect_codes=[301],
+            http_code=200,
+        )
+        out = _capture([r])
+        assert "[301]" in out
+        assert "[200]" not in out
+
+    def test_two_hops_shows_both_redirect_codes(self) -> None:
+        r = _result(
+            LinkStatus.REDIRECT,
+            url="http://example.com",
+            redirect_chain=[
+                "http://example.com",
+                "https://example.com",
+                "https://example.com/final",
+            ],
+            redirect_codes=[301, 302],
+            http_code=200,
+        )
+        out = _capture([r])
+        assert "[301, 302]" in out
+        assert "https://example.com" in out
+        assert "https://example.com/final" in out
+
+    def test_missing_redirect_codes_omits_suffix(self) -> None:
+        r = _result(
+            LinkStatus.REDIRECT,
+            url="http://example.com",
+            redirect_chain=["http://example.com", "https://example.com/"],
+            redirect_codes=None,
+            http_code=200,
+        )
+        out = _capture([r])
+        assert "[" not in out.split("REDIRECT")[1]
+
 
 # ── Blocked links ─────────────────────────────────────────────────────────────
 

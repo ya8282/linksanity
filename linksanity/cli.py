@@ -1137,11 +1137,18 @@ def init_cmd(
                 err=True,
             )
         if write_baseline and baseline_path.exists():
-            typer.echo(
-                f"[linksanity] note: {baseline_path} already exists; a real run would "
-                "refuse (exit 2)",
-                err=True,
-            )
+            if yes:
+                typer.echo(
+                    f"[linksanity] note: {baseline_path} already exists; a real run "
+                    "would refuse (exit 2)",
+                    err=True,
+                )
+            else:
+                typer.echo(
+                    f"[linksanity] note: {baseline_path} already exists; a real run "
+                    "would ask before overwriting",
+                    err=True,
+                )
         typer.echo(workflow_text, nl=False)
         if write_baseline:
             broken_count = sum(1 for r in results if r.status in FAILING_STATUSES)

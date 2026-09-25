@@ -180,12 +180,12 @@ Invoke it in your MCP server by shelling out to `linksanity scan <paths> --forma
 
 If you use Claude Code, you can invoke linksanity directly from the Claude CLI:
 
-```
+```text
 ! linksanity scan ./docs/ --format json --output results.json
 ```
 
 Then ask Claude to interpret the output:
 
-```
+```text
 Read results.json and summarise which links are broken and why they might have rotted.
 ```

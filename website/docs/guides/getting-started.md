@@ -16,7 +16,7 @@ linksanity init
 
 **`init` never runs git.** It only writes files, then prints the `git add`/`git commit` commands so you can review before committing:
 
-```
+```text
 Wrote .github/workflows/linkcheck.yml
 Wrote .linksanity-baseline.json  (12 known-broken links)
 
@@ -68,7 +68,7 @@ To refresh a stale baseline, re-run `init` interactively rather than pointing `-
 
 `init` reports two numbers separately rather than collapsing them into one confident figure: the scan time it just measured locally, and a modelled CI overhead (runner setup, checkout, `setup-python`, pip install, artifact upload) added on top before rounding up to a billed minute. Treat it as an estimate, not a promise: your local run has a different egress IP, warmer DNS, and a different CPU than the GitHub Actions runner, so local wall time is a biased proxy for runner wall time. Illustrative sample output:
 
-```
+```text
 Measured locally:  1m 52s   (318 unique URLs, 87 domains)
 CI overhead:      ~9s      (runner setup, checkout, python, pip install, artifact upload)
 Estimated billed: ~3 min/run   GitHub rounds each job up to a whole minute
@@ -102,7 +102,7 @@ A few behaviors worth knowing before you script around `init`:
 
 Both `scan` and `crawl` print one line per notable link (anything other than `ok` or `skipped`), then a summary tally:
 
-```
+```text
 $ linksanity scan ./docs/
 
 docs/api/guide.md

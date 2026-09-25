@@ -55,7 +55,7 @@ If you only want to skip specific pages on a host rather than the whole domain, 
 
 **Symptom:**
 
-```
+```text
 [linksanity] --config file not found: /path/to/config.toml
 ```
 
@@ -69,7 +69,7 @@ Exits with status `2` before doing anything else — no scan is attempted.
 
 **Symptom:**
 
-```
+```text
 [linksanity] invalid TOML syntax in /path/to/linksanity.toml: ...
 ```
 
@@ -83,7 +83,7 @@ Exits with status `2` before doing anything else — no scan is attempted.
 
 **Symptom:**
 
-```
+```text
 [linksanity] Playwright is required for crawl mode.
 Install it: pip install linksanity[browser] && playwright install chromium
 ```

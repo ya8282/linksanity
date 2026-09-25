@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import fnmatch
 import math
+import os
 import sys
 import tomllib
 from dataclasses import dataclass, field
@@ -41,6 +42,7 @@ class Config:
     annotations: bool | None = None
     offline: bool = False
     stealth: bool = False
+    paths: list[str] = field(default_factory=list)
 
 
 class ConfigError(ValueError):
@@ -234,10 +236,55 @@ def _bool_or_none(data: dict[str, object], key: str, path: Path | None) -> bool 
     return _bool(data, key, False, path)
 
 
+def _string_list(data: dict[str, object], key: str, path: Path | None) -> list[str]:
+    """Like `_string_set` but order-preserving and strict: every item must
+    already be a string. `paths` is user-visible order (scan order, YAML
+    rendering order), unlike a domain/pattern set where order never matters
+    -- so, unlike `_string_set`, this does not str()-coerce non-string items;
+    a stray `paths = ["docs", 1]` is a config error, not a silent int(1)."""
+    if key not in data:
+        return []
+    raw = data[key]
+    if not isinstance(raw, list):
+        _raise_type_error(key, path, "a list of strings", _type_name(raw))
+    for item in raw:
+        if not isinstance(item, str):
+            _raise_type_error(key, path, "a list of strings", _type_name(item))
+    return cast("list[str]", raw)
+
+
+def _resolve_paths(raw: list[str], search_path: Path) -> list[str]:
+    """Resolve each `paths` entry against the directory holding the loaded
+    toml, then re-express it relative to the cwd, so scan output looks like
+    a CLI-typed path (spec section 8). Absolute entries and glob characters
+    pass through untouched -- this never calls resolve()/glob, only plain
+    string path-joining, so a pattern like "docs/**/*.md" survives intact.
+    """
+    base = search_path.parent
+    cwd = Path.cwd()
+    resolved: list[str] = []
+    for entry in raw:
+        if os.path.isabs(entry):
+            resolved.append(entry)
+            continue
+        joined = os.path.join(str(base), entry)
+        try:
+            rel = os.path.relpath(joined, cwd)
+        except ValueError:
+            # Different drives on Windows: relpath can't express a relative
+            # path across them, so fall back to the absolute joined path.
+            rel = joined
+        if entry.endswith("/") and not rel.endswith("/"):
+            # relpath strips a trailing slash; restore it if the user wrote one.
+            rel += "/"
+        resolved.append(rel)
+    return resolved
+
+
 # Every top-level linksanity.toml key load_config actually reads. Keep in
 # sync with the string literals passed to _int/_bool/_str/_string_set/
-# _bool_or_none below -- add a key here whenever one is added there, or it
-# will be reported as unrecognised (linksanity-1lc).
+# _string_list/_bool_or_none below -- add a key here whenever one is added
+# there, or it will be reported as unrecognised (linksanity-1lc).
 _CONSUMED_KEYS = frozenset(
     {
         "workers",
@@ -263,6 +310,7 @@ _CONSUMED_KEYS = frozenset(
         "annotations",
         "offline",
         "stealth",
+        "paths",
     }
 )
 
@@ -352,6 +400,7 @@ def load_config(
         annotations=_bool_or_none(data, "annotations", search_path),
         offline=_bool(data, "offline", Config.offline, search_path),
         stealth=_bool(data, "stealth", Config.stealth, search_path),
+        paths=_resolve_paths(_string_list(data, "paths", search_path), search_path),
     )
 
     # CLI overrides replace file values when explicitly provided

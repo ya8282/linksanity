@@ -29,7 +29,7 @@ pytest tests/integration/ # integration tests (browser optional)
 ## Running the gate
 
 Setup above installs `dev` only, not `browser` — that matches the project's
-own `.venv` and CI's `test` job, so the 6 playwright skips below are the
+own `.venv` and CI's `test` job, so the 8 playwright skips below are the
 normal state, not a broken run.
 
 The gate is `pytest -x -q`, run from the repository root with that dev-only
@@ -37,12 +37,17 @@ install; this is exactly what CI's `test` job runs. If you use `uv` instead:
 run `uv sync --extra dev` once, then `uv run pytest -x -q` is equivalent —
 plain `pytest -x -q` above is canonical since it's what Setup and CI both use.
 
-Expected: **1070 passed, 6 skipped**, coverage **87.07%** (floor: 80%, set in
-`pyproject.toml`). The 6 skips are the playwright-dependent tests, skipped
+Expected: **1104 passed, 8 skipped**, coverage **86.86%** (floor: 80%, set in
+`pyproject.toml`). The 8 skips are the playwright-dependent tests, skipped
 because `browser` isn't installed by default, not because anything is broken.
 `mypy linksanity/` and `ruff check linksanity/ tests/ scripts/` (CI's lint
 scope — a bare `ruff check .` additionally lints `pyproject.toml`, and is not
 the gate) must both be clean.
+
+The skipped playwright tests run in CI's `test-browser` job instead. To run
+them locally: `pip install -e ".[dev,browser]"`, `playwright install
+chromium`, then `LINKSANITY_REQUIRE_BROWSER=1 pytest -x -q` — that env var
+turns a missing playwright install into a hard failure instead of a skip.
 
 ## Code quality
 

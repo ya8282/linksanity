@@ -139,6 +139,16 @@ class TestBFSDiscovery:
         assert call_count.get(page2, 0) == 1
 
 
+class TestStealthForwarding:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stealth", [True, False])
+    async def test_stealth_forwarded_to_crawl_page(self, stealth: bool) -> None:
+        mock_cp = AsyncMock(return_value=_ok(START))
+        with patch("linksanity.crawler.crawl_page", mock_cp):
+            await run_crawl(START, _config(stealth=stealth))
+        assert mock_cp.call_args.kwargs["stealth"] is stealth
+
+
 # ── max_pages limit ───────────────────────────────────────────────────────────
 
 class TestMaxPages:

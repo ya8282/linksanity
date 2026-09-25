@@ -292,8 +292,10 @@ def scan(
     stealth: bool = typer.Option(
         False,
         help="Patch common headless-browser fingerprints (navigator.webdriver, plugins, etc.) "
-        "before navigation. Does not help against IP-reputation-based bot walls (e.g. "
-        "iso.org's), only fingerprint-based ones.",
+        "before navigation. Only affects URLs routed to Playwright via --js-domains "
+        "(or js_domains in linksanity.toml); plain HTTP checks are unaffected. Does not "
+        "help against IP-reputation-based bot walls (e.g. iso.org's), only "
+        "fingerprint-based ones.",
     ),
 ) -> None:
     """Scan local documentation files for broken links."""
@@ -716,8 +718,9 @@ def crawl(
     stealth: bool = typer.Option(
         False,
         help="Patch common headless-browser fingerprints (navigator.webdriver, plugins, etc.) "
-        "before navigation. Does not help against IP-reputation-based bot walls (e.g. "
-        "iso.org's), only fingerprint-based ones.",
+        "before navigation. Applies to same-domain pages rendered during the crawl; "
+        "external links, which are HTTP-checked, are unaffected. Does not help against "
+        "IP-reputation-based bot walls (e.g. iso.org's), only fingerprint-based ones.",
     ),
 ) -> None:
     """Crawl a live site and check all links."""

@@ -2,7 +2,21 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# LINKSANITY_REQUIRE_BROWSER=1 turns a missing playwright install into a hard
+# failure instead of the usual importorskip skips, so CI's test-browser job
+# can't silently go green if the browser extra failed to install.
+if os.environ.get("LINKSANITY_REQUIRE_BROWSER") == "1":
+    try:
+        import playwright  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "LINKSANITY_REQUIRE_BROWSER=1 but playwright is not installed. "
+            'Install the browser extra: pip install -e ".[dev,browser]"'
+        ) from exc
 
 # Any public address will do; the guard only asks whether it is private.
 PUBLIC_ADDR = "93.184.216.34"

@@ -199,6 +199,20 @@ class TestExitCodes:
             result = runner.invoke(app, ["fix", str(doc), "--write"])
         assert result.exit_code == 1
 
+    def test_write_oserror_exits_2(self, doc: Path) -> None:
+        def fake_apply(*_args: object, **_kwargs: object) -> None:
+            raise OSError("Permission denied: 'foo.md'")
+
+        with (
+            _patch_proposals([_proposal(str(doc))]),
+            patch("linksanity.cli.apply_proposals", new=fake_apply),
+            patch("linksanity.cli._check_clean_tree", new=lambda *a, **k: None),
+        ):
+            result = runner.invoke(app, ["fix", str(doc), "--write"])
+
+        assert result.exit_code == 2
+        assert "cannot write source file" in result.stderr
+
 
 # ── Dry run is the default ────────────────────────────────────────────────────
 

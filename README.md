@@ -58,15 +58,18 @@ $ linksanity scan DOCS_DIR
 Sample output:
 
 ```bash
+
 DOCS_DIR/api/guide.md
-  BROKEN    line   12  ./missing.md — file not found
-  REDIRECT  line   45  https://old.example.com → https://new.example.com
+  BROKEN    line   12  ./missing.md — file not found: /home/you/project/DOCS_DIR/api/missing.md
+  REDIRECT  line   45  https://old.example.com → https://new.example.com [301]
+  TOOMANY   line   67  https://flaky.example.com — too many redirects (max 10)
   BLOCKED   line   78  https://example.com/page [403]
 
-ok=38   broken=1   redirect=1   blocked=1   skipped=0
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ok=37   broken=1   redirect=1   too_many_redirects=1   blocked=1   skipped=0
 ```
 
-Exit code `0` means every link is clean; `1` means at least one broken or redirected link was found — plug that straight into CI. `BLOCKED` does not affect the exit code: a blocked link means the request was refused (401/403), not that the resource is confirmed gone. See [Exit codes](https://ya8282.github.io/linksanity/guides/output-modes#exit-codes) for the full table, including `2` for an operational error and `3` for a failed `--github-issue` report. Point it at a single file, a directory, or a glob; add `--check-anchors` to also validate in-page fragments, or `--format json --output results.json` for machine-readable results.
+Exit code `0` means every link is clean; `1` means at least one link was `BROKEN`, hit a checker `ERROR`, or had too many redirects (`TOO_MANY_REDIRECTS`) — plug that straight into CI. A plain `REDIRECT` does not affect the exit code. `BLOCKED` does not affect the exit code: a blocked link means the request was refused (401/403), not that the resource is confirmed gone. See [Exit codes](https://ya8282.github.io/linksanity/guides/output-modes#exit-codes) for the full table, including `2` for an operational error and `3` for a failed `--github-issue` report. Point it at a single file, a directory, or a glob; add `--check-anchors` to also validate in-page fragments, or `--format json --output results.json` for machine-readable results.
 
 The fastest way to wire this into a repo is the setup wizard, which detects your docs directory and writes a GitHub Actions workflow for you:
 

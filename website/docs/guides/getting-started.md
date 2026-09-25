@@ -100,15 +100,18 @@ A few behaviors worth knowing before you script around `init`:
 
 ## Quick start
 
-Both `scan` and `crawl` print one line per broken or redirected link, then a summary tally:
+Both `scan` and `crawl` print one line per notable link (anything other than `ok` or `skipped`), then a summary tally:
 
 ```
 $ linksanity scan ./docs/
-docs/api/guide.md
-  BROKEN    line   12  ./missing.md — file not found
-  REDIRECT  line   45  https://old.example.com → https://new.example.com
 
-ok=38   broken=1   redirect=1   skipped=0
+docs/api/guide.md
+  BROKEN    line   12  ./missing.md — file not found: /home/you/project/docs/api/missing.md
+  REDIRECT  line   45  https://old.example.com → https://new.example.com [301]
+  TOOMANY   line   67  https://flaky.example.com — too many redirects (max 10)
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ok=35   broken=1   redirect=1   too_many_redirects=1   blocked=0   skipped=0
 ```
 
 ### Scan local source files

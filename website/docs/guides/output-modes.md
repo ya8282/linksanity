@@ -10,7 +10,7 @@ independently of `--format` when their own flag is set:
 
 | Reporter | Trigger | What it does |
 |---|---|---|
-| `console` | `--format console` (default) | Human-readable, one line per broken/redirected link plus a summary tally |
+| `console` | `--format console` (default) | Human-readable, one line per notable link (anything other than `ok`/`skipped`) plus a summary tally |
 | `json` | `--format json` | The full result array described below — the stable machine-readable format |
 | `csv` | `--format csv` | Same result data as CSV rows |
 | `markdown` | `--report FILE` | Writes a Markdown summary report to `FILE`, independent of `--format` |

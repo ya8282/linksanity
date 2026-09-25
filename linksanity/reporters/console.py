@@ -87,11 +87,16 @@ def report(results: list[LinkResult], *, file: IO[str] | None = None) -> None:
 
 def _detail(r: LinkResult) -> str:
     if r.status == LinkStatus.REDIRECT:
-        suffix = f" [{r.http_code}]" if r.http_code else ""
         if r.redirect_chain:
-            chain = " → ".join(escape(u) for u in r.redirect_chain)
+            # redirect_chain is [original, *hops, resolved] — the original URL
+            # is already printed on the line by the caller, so start after it.
+            chain = " → ".join(escape(u) for u in r.redirect_chain[1:])
+            suffix = f" [{', '.join(str(c) for c in r.redirect_codes)}]" if r.redirect_codes else ""
             return f" → {chain}{suffix}"
-        return f" → {escape(r.resolved_url or '')}{suffix}"
+        # No chain recorded (shouldn't happen alongside REDIRECT, but don't
+        # crash): fall back to resolved_url with no code suffix, since
+        # http_code here is the final response code, not a redirect code.
+        return f" → {escape(r.resolved_url or '')}"
     if r.status == LinkStatus.TOO_MANY_REDIRECTS:
         return f" — {escape(r.error or '')}"
     if r.http_code and r.http_code >= 400:

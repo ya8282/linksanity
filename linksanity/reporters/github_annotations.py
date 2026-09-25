@@ -27,7 +27,12 @@ def _esc_prop(value: str) -> str:
 
 
 def _line_for(result: LinkResult) -> str:
-    detail = result.error or (f"HTTP {result.http_code}" if result.http_code else "unreachable")
+    if result.status == LinkStatus.REDIRECT and result.redirect_codes:
+        # http_code here is the final response code, not a redirect code.
+        codes = ", ".join(str(c) for c in result.redirect_codes)
+        detail = f"redirect [{codes}]"
+    else:
+        detail = result.error or (f"HTTP {result.http_code}" if result.http_code else "unreachable")
     level = "error" if result.status in _ERROR_STATUSES else "warning"
     return (
         f"::{level} file={_esc_prop(result.source_file)},line={result.line},"

@@ -543,6 +543,96 @@ class TestUnconsumedKeysWarn:
         assert capsys.readouterr().err == ""
 
 
+class TestPathsField:
+    """The top-level `paths` config key (linksanity-pcz.2 / spec section 8)."""
+
+    def test_valid_list_loads_in_order(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text('paths = ["docs/", "README.md", "guides/"]\n')
+        monkeypatch.chdir(tmp_path)
+        cfg = load_config(toml_path=p)
+        assert cfg.paths == ["docs/", "README.md", "guides/"]
+
+    def test_missing_key_gives_empty_list(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("workers = 3\n")
+        cfg = load_config(toml_path=p)
+        assert cfg.paths == []
+
+    def test_no_file_gives_empty_list(self, tmp_path: Path) -> None:
+        cfg = load_config(toml_path=tmp_path / "nonexistent.toml")
+        assert cfg.paths == []
+
+    def test_string_value_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text('paths = "docs/"\n')
+        with pytest.raises(ConfigError, match=r"paths.*expected a list of strings"):
+            load_config(toml_path=p)
+
+    def test_int_value_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text("paths = 5\n")
+        with pytest.raises(ConfigError, match=r"paths.*expected a list of strings"):
+            load_config(toml_path=p)
+
+    def test_list_with_non_string_item_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text('paths = ["docs/", 1]\n')
+        with pytest.raises(ConfigError, match=r"paths.*expected a list of strings"):
+            load_config(toml_path=p)
+
+    def test_relative_entry_resolved_from_toml_dir_to_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # linksanity.toml sits at the repo root; scan runs from a subdirectory
+        # -- "docs" must still mean the repo's docs/, not sub/docs/.
+        (tmp_path / "docs").mkdir()
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        p = tmp_path / "linksanity.toml"
+        p.write_text('paths = ["docs"]\n')
+        monkeypatch.chdir(sub)
+        cfg = load_config(toml_path=p)
+        assert cfg.paths == ["../docs"]
+
+    def test_absolute_entry_passes_through_unchanged(self, tmp_path: Path) -> None:
+        p = tmp_path / "linksanity.toml"
+        abs_path = str(tmp_path / "elsewhere")
+        p.write_text(f'paths = ["{abs_path}"]\n')
+        cfg = load_config(toml_path=p)
+        assert cfg.paths == [abs_path]
+
+    def test_glob_entry_preserved_while_prefix_is_rebased(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        p = tmp_path / "linksanity.toml"
+        p.write_text('paths = ["docs/**/*.md"]\n')
+        monkeypatch.chdir(sub)
+        cfg = load_config(toml_path=p)
+        assert cfg.paths == ["../docs/**/*.md"]
+
+    def test_trailing_slash_preserved(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text('paths = ["docs/"]\n')
+        monkeypatch.chdir(tmp_path)
+        cfg = load_config(toml_path=p)
+        assert cfg.paths == ["docs/"]
+
+    def test_no_unknown_key_warning(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        p = tmp_path / "linksanity.toml"
+        p.write_text('paths = ["docs/"]\n')
+        load_config(toml_path=p)
+        assert capsys.readouterr().err == ""
+
+
 class TestUrlIsSkipped:
     def test_exact_url_match(self) -> None:
         patterns = {"https://example.com/login", "https://example.com/admin"}

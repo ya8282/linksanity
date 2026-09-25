@@ -42,7 +42,7 @@ Rewriting source files is the one thing `fix` does that a re-run can't undo, so:
 - **Atomic writes** — a crash mid-fix can't leave a truncated file.
 - **Stale scans are safe** — if a file changed since the scan and the URL is no longer on its recorded line, that fix is skipped with a warning rather than applied blind.
 
-`--write` on a dirty tree exits `2`, same code as an invocation error — check the exit code, not just whether files changed, when scripting this.
+`--write` on a dirty tree exits `2`, the same code as any other operational error (bad arguments, invalid config, a missing dependency, or a failed write to `--output`/a domains file) — check the exit code, not just whether files changed, when scripting this.
 
 ## Format support
 
@@ -58,7 +58,7 @@ Rewriting source files is the one thing `fix` does that a re-run can't undo, so:
 |---|---|
 | `0` | Nothing to fix |
 | `1` | Proposals exist (dry run), or were applied (`--write`) |
-| `2` | Invocation error, or `--write` refused a dirty working tree |
+| `2` | Operational error: bad arguments, an invalid config, a missing dependency (Playwright, when `js_domains` is set in the config), or a failed write to `--output` or a domains/skip file -- or `--write` refused a dirty working tree |
 
 A `fix` exit of `1` is not a failure signal by itself — it just means there was something to report. Check `auto_applicable` in the JSON output below, or read the diff, to see what actually happened.
 

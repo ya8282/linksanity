@@ -87,7 +87,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `init`'s detection does, so a directory `init` proposed is not then
   scanned in full
 - Root-relative links (e.g. `/guides/output-modes`) now resolve against the
-  scan root instead of the filesystem root
+  scan root instead of the filesystem root. **Behavior change:** such links
+  almost always reported broken before; a corpus containing leading-slash
+  links will now see different (correct) results
 - Each scanned pattern gets its own root instead of one corpus-wide common
   path, fixing false matches when unrelated trees were scanned together
   (e.g. `scan /tmp /usr`)

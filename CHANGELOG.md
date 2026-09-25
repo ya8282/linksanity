@@ -35,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Console and markdown `REDIRECT` lines no longer repeat the original URL
+  at the start of the redirect chain, and end with the hop codes (e.g.
+  `[301]`, `[301, 302]`) instead of the final response code; that suffix is
+  omitted when no hop codes are present, and the URL-only line printed when
+  no chain was recorded no longer carries a code at all. The
+  `--annotations` redirect warning says `redirect [301]` when hop codes are
+  recorded, instead of `HTTP 200`. **Behavior change:** if you parse console, markdown, or
+  annotation text for a redirect's code, update to read the hop-code list
+  instead of a single trailing code. JSON and CSV output are unchanged.
 - The GitHub issue reporter now comments on and closes the standing
   link-rot issue on any clean `--github-issue` run, instead of doing
   nothing. Docs show how to gate the CI step to

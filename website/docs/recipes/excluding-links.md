@@ -29,7 +29,7 @@ One URL or pattern per line, matched with glob-style wildcards (Python's `fnmatc
 
 `.linksanity-skip` isn't auto-discovered — it's a filename convention for the file you pass to `--skip-urls`, typically committed at the repo root so both local runs and CI use the same list:
 
-```
+```text
 # .linksanity-skip
 https://app.example.com/login
 https://staging.example.com/*

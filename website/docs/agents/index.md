@@ -104,7 +104,7 @@ See [Fixing broken links](../recipes/fixing-broken-links.md) for the full fix wo
 
 Use this when you want to drive linksanity as an external process — for example, from a non-Python agent, or to isolate the scan in its own process. If you're calling from Python and don't need process isolation, `scan_paths` (see "Use as a library" below) is simpler than parsing subprocess output.
 
-`result.returncode` is the fast path: check it before touching the file. If it's `2`, something went wrong with invocation — read `result.stderr` for the error message rather than trying to parse the output file.
+`result.returncode` is the fast path: check it before touching the file. If it's `2`, an operational error occurred — read `result.stderr` for the error message rather than trying to parse the output file.
 
 ```python
 import json
@@ -117,7 +117,7 @@ result = subprocess.run(
 )
 
 if result.returncode == 2:
-    raise RuntimeError(f"linksanity invocation error: {result.stderr.strip()}")
+    raise RuntimeError(f"linksanity operational error: {result.stderr.strip()}")
 
 with open("results.json") as f:
     links = json.load(f)
@@ -180,12 +180,12 @@ Invoke it in your MCP server by shelling out to `linksanity scan <paths> --forma
 
 If you use Claude Code, you can invoke linksanity directly from the Claude CLI:
 
-```
+```text
 ! linksanity scan ./docs/ --format json --output results.json
 ```
 
 Then ask Claude to interpret the output:
 
-```
+```text
 Read results.json and summarise which links are broken and why they might have rotted.
 ```

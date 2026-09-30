@@ -125,7 +125,7 @@ jobs:
 
 **File-based skip list** — commit a `.linksanity-skip` file at your repo root to exclude auth-gated or staging URLs. Supports `*` wildcards:
 
-```
+```text
 # .linksanity-skip
 https://app.example.com/login
 https://staging.example.com/*

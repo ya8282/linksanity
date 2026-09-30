@@ -42,6 +42,7 @@ below the table). The rest, with their defaults:
 | `baseline` | unset | Previous JSON report to diff against |
 | `annotations` | unset (auto-detect) | Emit GitHub Actions annotations; `true`/`false` overrides auto-detect |
 | `offline` | `false` | Skip external HTTP checks |
+| `stealth` | `false` | Patch browser fingerprints on Playwright checks; does not help against IP-reputation blocks |
 
 ## CLI flag vs. `linksanity.toml` precedence
 
@@ -62,6 +63,10 @@ no `--check-images` flag and never reads the field, so setting
 warning, no error, just a no-op. Check the [flag compatibility
 matrix](./cli-reference.md) to know whether a field you set in the file
 is actually acted on by the subcommand you're running.
+
+`stealth = true` is an exception: `fix` has no `--stealth` flag, but it honors
+this setting when `js_domains` routes a URL through Playwright. Plain HTTP
+checks are unaffected.
 
 **`output`, `report`, `github_issue`, and `github_repo` are never read from
 `linksanity.toml` at all.** `load_config` doesn't parse these four fields

@@ -9,7 +9,7 @@ Detect broken links and redirects in live deployed sites or source files. Don't 
 - **Static scan or live crawl** — check source files directly, or crawl a deployed site with a headless browser (`--stealth` dodges common bot-fingerprint checks; on `scan` it only applies to links routed through `--js-domains` / `js_domains` in `linksanity.toml`)
 - **Fix mode** — `linksanity fix --write` auto-applies confident redirect and moved-file fixes in place; dry run by default
 - **Anchor checking** — `--check-anchors` validates in-page fragment targets, not just the links themselves
-- **CI integration** — exit codes for scripting, a `linksanity init` setup wizard that writes a GitHub Actions workflow around the [ya8282/linksanity-action](https://github.com/ya8282/linksanity-action), `--github-issue` to file/update a summary issue, and `--annotations` for inline `::error`/`::warning` output
+- **Setup and CI integration:** `linksanity init` can write a GitHub Actions workflow around the [ya8282/linksanity-action](https://github.com/ya8282/linksanity-action) or a `linksanity.toml` for local scans; exit codes, `--github-issue`, and `--annotations` support CI
 - **Machine-readable output** — `--format json` (or `csv`) for scripting and diffing results
 - **Baselines and incremental scans** — `--baseline` to report only new breakage, `--incremental` to scan just what changed since the last run
 
@@ -71,11 +71,21 @@ DOCS_DIR/api/guide.md
 
 Exit code `0` means every link is clean; `1` means at least one link was `BROKEN`, hit a checker `ERROR`, or had too many redirects (`TOO_MANY_REDIRECTS`) — plug that straight into CI. A plain `REDIRECT` does not affect the exit code. `BLOCKED` does not affect the exit code: a blocked link means the request was refused (401/403), not that the resource is confirmed gone. See [Exit codes](https://ya8282.github.io/linksanity/guides/output-modes#exit-codes) for the full table, including `2` for an operational error and `3` for a failed `--github-issue` report. Point it at a single file, a directory, or a glob; add `--check-anchors` to also validate in-page fragments, or `--format json --output results.json` for machine-readable results.
 
-The fastest way to wire this into a repo is the setup wizard, which detects your docs directory and writes a GitHub Actions workflow for you:
+Run the setup wizard to choose a GitHub Actions workflow or a `linksanity.toml` for local scans:
 
 ```bash
 linksanity init
 ```
+
+Choose a setup path directly with `linksanity init workflow` or `linksanity init config`. For scripts, `linksanity init --yes --paths docs/` still creates the workflow; `linksanity init config --yes --paths docs/` writes the config file.
+
+The config file can store paths to scan:
+
+```toml
+paths = ["docs/", "README.md"]
+```
+
+After that, `linksanity scan` uses those paths. Positional paths, such as `linksanity scan guides/`, replace the configured list for that run. The config wizard also asks for a link style (`mkdocs`, `docusaurus`, or `sphinx`) so extensionless page URLs can resolve to source files before anchor checking.
 
 ## License
 

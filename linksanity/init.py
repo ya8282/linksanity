@@ -7,13 +7,14 @@ module's return values to the user, and writes files.
 
 from __future__ import annotations
 
+import json
 import math
 import re
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
 from linksanity._meta import VERSION
-from linksanity.config import Config, load_config
+from linksanity.config import _CONSUMED_KEYS, Config, load_config
 from linksanity.pathwalk import should_descend as _should_descend
 
 # Same ten suffixes as scanner.py's _expand_paths (scanner.py:155-167).
@@ -383,6 +384,56 @@ def count_divergence_warning(detected_file_count: int, measured_file_count: int)
         "detection did not (often vendored code) -- consider deselecting it "
         "before committing."
     )
+
+
+def render_config_toml(
+    paths: list[str],
+    check_anchors: bool,
+    check_images: bool,
+    ignore_domains: list[str],
+    skip_urls: list[str],
+    link_style: str | None = None,
+) -> str:
+    """Render file-readable Config settings as a TOML reference file."""
+
+    def value_text(value: object) -> str:
+        if isinstance(value, bool):
+            return str(value).lower()
+        if isinstance(value, str):
+            return json.dumps(value, ensure_ascii=False)
+        if isinstance(value, (list, set)):
+            items = sorted(value) if isinstance(value, set) else value
+            return "[" + ", ".join(value_text(item) for item in items) + "]"
+        return str(value)
+
+    chosen: dict[str, object] = {
+        "paths": paths,
+        "check_anchors": check_anchors,
+        "check_images": check_images,
+        "ignore_domains": ignore_domains,
+        "skip_urls": skip_urls,
+    }
+    if link_style is not None:
+        chosen["link_style"] = link_style
+    defaults = Config()
+    lines = ["# linksanity configuration. See README.md for configuration options."]
+    for key, value in chosen.items():
+        prefix = "# " if key in ("ignore_domains", "skip_urls") and not value else ""
+        lines.append(f"{prefix}{key} = {value_text(value)}")
+    lines.append("")
+    none_examples = {
+        "link_style": "mkdocs",
+        "cache_file": ".linksanity-cache.json",
+        "since": "HEAD~1",
+        "baseline": ".linksanity-baseline.json",
+        "annotations": False,
+    }
+    for item in fields(Config):
+        key = item.name
+        if key in _CONSUMED_KEYS and key not in chosen:
+            value = getattr(defaults, key)
+            lines.append(f"# {key} = {value_text(none_examples[key] if value is None else value)}")
+    return "\n".join(lines) + "\n"
 
 
 def render_workflow(paths: list[str], baseline_path: str | None = None) -> str:

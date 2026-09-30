@@ -5,6 +5,7 @@ from __future__ import annotations
 import shlex
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from typer.testing import CliRunner
 
 from linksanity._meta import VERSION
 from linksanity.cli import app
+from linksanity.config import _CONSUMED_KEYS, Config, load_config
 from linksanity.init import (
     _ACTION_PINNED_VERSION,
     DetectionResult,
@@ -22,12 +24,253 @@ from linksanity.init import (
     detect_paths,
     estimate_billed_minutes,
     measuring_config,
+    render_config_toml,
     render_estimate,
     render_workflow,
 )
 from linksanity.queue import LinkQueue, LinkResult, LinkStatus, LinkType
 
 runner = CliRunner()
+
+
+def test_render_config_toml_round_trips_and_lists_all_file_keys(tmp_path: Path) -> None:
+    rendered = render_config_toml(
+        ['docs/a"b\\c.md'], True, False, ["example.com"], ["https://example.com/*"]
+    )
+    parsed = tomllib.loads(rendered)
+    assert parsed["paths"] == ['docs/a"b\\c.md']
+    assert parsed["check_anchors"] is True
+    assert parsed["check_images"] is False
+    assert parsed["ignore_domains"] == ["example.com"]
+    assert parsed["skip_urls"] == ["https://example.com/*"]
+    assert all(f"{key} = " in rendered for key in _CONSUMED_KEYS)
+    assert all(f"{key} = " not in rendered for key in ("output", "report", "github_issue", "github_repo"))
+    config_file = tmp_path / "linksanity.toml"
+    config_file.write_text(rendered)
+    loaded = load_config(config_file)
+    defaults = Config()
+    assert len(loaded.paths) == 1
+    assert Path(loaded.paths[0]).resolve() == (tmp_path / 'docs/a"b\\c.md').resolve()
+    assert loaded.check_anchors is True
+    assert loaded.check_images is False
+    assert loaded.ignore_domains == {"example.com"}
+    assert loaded.skip_urls == {"https://example.com/*"}
+    for key in _CONSUMED_KEYS - {"paths", "check_anchors", "check_images", "ignore_domains", "skip_urls"}:
+        assert getattr(loaded, key) == getattr(defaults, key)
+
+
+def test_render_config_toml_comments_empty_lists() -> None:
+    rendered = render_config_toml(["docs/"], False, False, [], [])
+    assert "# ignore_domains = []" in rendered
+    assert "# skip_urls = []" in rendered
+    assert "\nignore_domains = " not in rendered
+    assert "\nskip_urls = " not in rendered
+
+
+def test_render_config_toml_accepts_unicode_path() -> None:
+    rendered = render_config_toml(["docs/🏀.md"], False, False, [], [])
+    assert tomllib.loads(rendered)["paths"] == ["docs/🏀.md"]
+
+
+@pytest.mark.parametrize("flags", [
+    ["--yes", "--paths", "docs/", "--no-measure"],
+    ["--yes", "--paths", "docs/", "--no-measure", "--dry-run"],
+])
+def test_init_workflow_matches_bare_init(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flags: list[str]
+) -> None:
+    bare_dir = tmp_path / "bare"
+    workflow_dir = tmp_path / "workflow"
+    bare_dir.mkdir()
+    workflow_dir.mkdir()
+    monkeypatch.chdir(bare_dir)
+    bare = runner.invoke(app, ["init", *flags])
+    monkeypatch.chdir(workflow_dir)
+    workflow = runner.invoke(app, ["init", "workflow", *flags])
+    assert workflow.exit_code == bare.exit_code == 0
+    assert workflow.stdout == bare.stdout
+    assert workflow.stderr == bare.stderr
+
+
+def test_init_config_yes_writes_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["init", "config", "--yes", "--paths", "docs/"])
+    assert result.exit_code == 0
+    assert "Wrote linksanity.toml" in result.stdout
+    assert "git add linksanity.toml" in result.stdout
+    assert "CI" in result.stdout
+    cfg = load_config(tmp_path / "linksanity.toml")
+    assert cfg.paths == ["docs/"]
+    assert cfg.check_anchors is False
+    assert cfg.link_style is None
+    assert cfg.ignore_domains == set()
+
+
+def test_init_config_interactive_answers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "guide.md").write_text("# Guide\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    result = runner.invoke(app, ["init", "config"], input="\ny\ny\n\nexample.com, other.org\nhttps://a/*, https://b/*\nn\n")
+    assert result.exit_code == 0
+    cfg = load_config(tmp_path / "linksanity.toml")
+    assert cfg.paths == ["docs/"]
+    assert cfg.check_anchors is True
+    assert cfg.check_images is True
+    assert cfg.ignore_domains == {"example.com", "other.org"}
+    assert cfg.skip_urls == {"https://a/*", "https://b/*"}
+
+
+def test_init_config_link_style_makes_first_anchor_scan_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "index.md").write_text("[section](/target/#real-section)\n")
+    (docs / "target.md").write_text("# Real Section\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+
+    result = runner.invoke(
+        app, ["init", "config", "--paths", "docs/"], input="y\nn\ninvalid\nmkdocs\n\n\n\n"
+    )
+
+    assert result.exit_code == 0
+    assert "Choose none, mkdocs, docusaurus, or sphinx." in result.stdout
+    config = load_config(tmp_path / "linksanity.toml")
+    assert config.check_anchors is True
+    assert config.link_style == "mkdocs"
+    assert "broken=0" in result.stdout
+
+
+def test_init_config_guards_and_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["init", "config"]).exit_code == 2
+    assert runner.invoke(app, ["init", "config", "--yes"]).exit_code == 2
+    dry = runner.invoke(app, ["init", "config", "--yes", "--paths", "docs/", "--dry-run"])
+    assert dry.exit_code == 0
+    assert 'paths = ["docs/"]' in dry.stdout
+    assert not (tmp_path / "linksanity.toml").exists()
+    (tmp_path / "linksanity.toml").write_text("original = true\n")
+    refused = runner.invoke(app, ["init", "config", "--yes", "--paths", "docs/"])
+    assert refused.exit_code == 2
+    assert (tmp_path / "linksanity.toml").read_text() == "original = true\n"
+
+
+def test_init_config_optional_scan_keeps_setup_exit_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([_broken_result()], [tmp_path / "docs/a.md"]))
+    result = runner.invoke(app, ["init", "config", "--paths", "docs/"], input="n\nn\n\n\n\n\n")
+    assert result.exit_code == 0
+    assert "1 files" in result.stdout
+    assert "1 links" in result.stdout
+    assert "1 broken" in result.stdout
+    assert "BROKEN" in result.stdout
+    assert "linksanity scan" in result.stdout
+
+
+def test_init_config_declined_scan_does_not_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    monkeypatch.setattr("linksanity.cli.run_scan", _fail_if_called)
+    result = runner.invoke(app, ["init", "config", "--paths", "docs/"], input="n\nn\n\n\n\nn\n")
+    assert result.exit_code == 0
+
+
+def test_init_config_scan_error_keeps_setup_exit_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FailingScan())
+    result = runner.invoke(app, ["init", "config", "--paths", "docs/"], input="n\nn\n\n\n\n\n")
+    assert result.exit_code == 0
+    assert "test scan failed: boom" in result.stderr
+
+
+def test_bare_init_menu_routes_config_dry_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    result = runner.invoke(app, ["init", "--dry-run"], input="bad\n2\ndocs/\nn\nn\n\n\n\n")
+    assert result.exit_code == 0
+    assert "What do you want to set up?" in result.stdout
+    assert 'paths = ["docs/"]' in result.stdout
+    assert not (tmp_path / "linksanity.toml").exists()
+
+
+def test_bare_init_menu_routes_workflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "a.md").write_text("# Doc\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([]))
+    result = runner.invoke(app, ["init", "--dry-run"], input="1\n\n")
+    assert result.exit_code == 0
+    assert "What do you want to set up?" in result.stdout
+    assert "name: Link check" in result.stdout
+
+
+@pytest.mark.parametrize("flags", [
+    ["--paths", "docs/"],
+    ["--no-baseline"],
+    ["--no-measure"],
+    ["--workflow-name", "linkcheck.yml"],
+])
+def test_bare_init_workflow_flags_skip_menu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flags: list[str]
+) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "a.md").write_text("# Doc\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    monkeypatch.setattr("linksanity.cli.run_scan", _FakeScan([]))
+    result = runner.invoke(app, ["init", *flags, "--dry-run"], input="\n")
+    assert result.exit_code == 0
+    assert "What do you want to set up?" not in result.stdout
+    assert "name: Link check" in result.stdout
+
+
+def test_bare_init_menu_eof_exits_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    result = runner.invoke(app, ["init"], input="")
+    assert result.exit_code == 2
+
+
+def test_init_config_existing_file_decline_preserves_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "linksanity.toml"
+    target.write_text("original = true\n")
+    monkeypatch.setattr("linksanity.cli._stdin_is_tty", lambda: True)
+    result = runner.invoke(app, ["init", "config", "--paths", "docs/"], input="n\nn\n\n\n\nn\n")
+    assert result.exit_code == 2
+    assert target.read_text() == "original = true\n"
+
+
+def test_init_config_write_failure_exits_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    def fail_write(self: Path, data: str, encoding: str) -> int:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_text", fail_write)
+    result = runner.invoke(app, ["init", "config", "--yes", "--paths", "docs/"])
+    assert result.exit_code == 2
+    assert "cannot write linksanity.toml: disk full" in result.stderr
 
 
 def _write(path: Path, content: str = "x") -> None:

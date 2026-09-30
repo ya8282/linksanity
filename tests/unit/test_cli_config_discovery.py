@@ -112,6 +112,45 @@ class TestReadDomainsHelper:
 
 
 class TestScanConfigDiscoveryEndToEnd:
+    def test_scan_uses_config_paths_when_omitted(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "linksanity.toml").write_text('paths = ["docs/"]\ncheck_anchors = true\n')
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        _write_doc(docs)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "--offline"])
+
+        assert result.exit_code == 1
+        assert "broken=1" in result.stdout
+
+    def test_positional_paths_override_config_paths(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "linksanity.toml").write_text('paths = ["missing/"]\ncheck_anchors = true\n')
+        _write_doc(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "doc.md", "--offline"])
+
+        assert result.exit_code == 1
+        assert "broken=1" in result.stdout
+
+    @pytest.mark.parametrize("config_text", [None, "check_anchors = true\n"])
+    def test_scan_without_any_paths_exits_2(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config_text: str | None
+    ) -> None:
+        if config_text is not None:
+            (tmp_path / "linksanity.toml").write_text(config_text)
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(app, ["scan", "--offline"])
+
+        assert result.exit_code == 2
+        assert "no paths to scan" in result.stderr
+
     def test_found_in_cwd_is_used(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

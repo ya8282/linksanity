@@ -5,10 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2026-09-24
+## [0.4.0] - 2026-09-29
 
 ### Added
 
+- **Config setup path** — `linksanity init config` writes a `linksanity.toml`
+  for local scans; bare `init` offers a workflow or config menu in a TTY.
+  `init workflow` keeps the existing CI setup flow, and existing scripted
+  `init --yes --paths ...` invocations still create the workflow. The config
+  wizard asks for a link style so extensionless page URLs resolve before
+  anchor checks.
+- **Configured scan paths** — `paths` in `linksanity.toml` lets `linksanity scan`
+  run without positional paths. Explicit scan paths replace the configured list.
 - **`LinkStatus.BLOCKED`** — HTTP 401/403 responses are now classified as
   `BLOCKED` instead of `BROKEN`. **Behavior change:** `BLOCKED` does not
   count toward CI exit codes or `FAILING_STATUSES` by default, unlike a 404.
@@ -35,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Console and markdown `REDIRECT` lines no longer repeat the original URL
+  at the start of the redirect chain, and end with the hop codes (e.g.
+  `[301]`, `[301, 302]`) instead of the final response code; that suffix is
+  omitted when no hop codes are present, and the URL-only line printed when
+  no chain was recorded no longer carries a code at all. The
+  `--annotations` redirect warning says `redirect [301]` when hop codes are
+  recorded, instead of `HTTP 200`. **Behavior change:** if you parse console, markdown, or
+  annotation text for a redirect's code, update to read the hop-code list
+  instead of a single trailing code. JSON and CSV output are unchanged.
 - The GitHub issue reporter now comments on and closes the standing
   link-rot issue on any clean `--github-issue` run, instead of doing
   nothing. Docs show how to gate the CI step to
@@ -78,7 +95,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `init`'s detection does, so a directory `init` proposed is not then
   scanned in full
 - Root-relative links (e.g. `/guides/output-modes`) now resolve against the
-  scan root instead of the filesystem root
+  scan root instead of the filesystem root. **Behavior change:** such links
+  almost always reported broken before; a corpus containing leading-slash
+  links will now see different (correct) results
 - Each scanned pattern gets its own root instead of one corpus-wide common
   path, fixing false matches when unrelated trees were scanned together
   (e.g. `scan /tmp /usr`)

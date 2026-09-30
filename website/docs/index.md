@@ -8,7 +8,7 @@ Detect broken links and redirects in Markdown, reStructuredText, and HTML conten
 Don't let dead URLs leave you hanging on the rim! Catch broken docs links in the Knick of time with Linksanity.
 This tool keeps your documentation or web content game flawless, ensuring you never drop the ball on your readers.
 
-```
+```text
 $ linksanity scan ./docs/
 
 docs/api/guide.md
@@ -25,7 +25,7 @@ docs/api/guide.md
 - **Static scan** — parse 8 file formats (see Supported formats below) without a browser
 - **Live crawl** — follow links on a deployed site using a headless browser (Playwright)
 - **Fix, don't just report** — `linksanity fix` rewrites permanently-redirected URLs and moved-file links in place (see [Fixing broken links](./recipes/fixing-broken-links.md))
-- **Exit codes** — `0` = clean, `1` = broken links found (ideal for CI); see [Exit codes](./guides/output-modes.md#exit-codes) for the full table, including `2` (invocation error) and `3` (`--github-issue` reporter failed)
+- **Exit codes** — `0` = clean, `1` = broken links found (ideal for CI); see [Exit codes](./guides/output-modes.md#exit-codes) for the full table, including `2` (operational error) and `3` (`--github-issue` reporter failed)
 - **Multiple formats** — console (Rich), JSON, CSV; optional Markdown summary report
 - **Anchor validation** — opt-in `--check-anchors` flag
 - **GitHub Issues** — create or update an issue summarising failing links (broken, checker errors, and redirect loops)

@@ -29,6 +29,7 @@ and isn't part of the shared `scan`/`fix`/`crawl` matrix below.
 | `--annotations` | ✅ | — | ✅ |
 | `--max-redirects` | ✅ | — | ✅ |
 | `--js-domains` | ✅ | — | — |
+| `--stealth` | ✅ | — | ✅ |
 | `--offline` | ✅ | — | — |
 | `--myst` | ✅ | — | — |
 | `--baseline`, `--incremental`, `--since` | ✅ | — | — |
@@ -41,7 +42,9 @@ A `linksanity.toml` is shared by all three subcommands. Most `Config` fields
 are parsed from TOML regardless of which subcommand runs, but a subcommand
 only *acts on* the ones with a matching flag — `check_images` is parsed even
 under `crawl`, for example, but `crawl` has no `--check-images` flag and never
-reads the field, so setting it silently has no effect on a crawl.
+reads the field, so setting it silently has no effect on a crawl. One exception:
+`fix` honors `stealth = true` from TOML for URLs routed through Playwright,
+though it has no `--stealth` flag.
 
 Four fields are different: `output`, `report`, `github_issue`, and
 `github_repo` are never read from `linksanity.toml` at all — `load_config`
@@ -65,6 +68,7 @@ traps.
 | `--link-style` | — | Relative-link resolution preset for built docs sites: `mkdocs`, `docusaurus`, `sphinx` |
 | `--ignore-domains FILE` | — | One domain per line to skip |
 | `--js-domains FILE` | — | Domains to check via Playwright |
+| `--stealth` | off | Patch browser fingerprints only for URLs routed to Playwright via `--js-domains` or `js_domains` in TOML; plain HTTP checks are unaffected. Does not help against IP-reputation blocks (e.g. iso.org) |
 | `--skip-urls FILE` | — | URLs/patterns to skip (one per line, `*` wildcards ok) |
 | `--format` | console | `console`, `json`, or `csv` |
 | `--output FILE` | stdout | Write results to file |
@@ -108,6 +112,7 @@ group, plus:
 | `--playwright-workers N` | 2 | Max concurrent browser sessions |
 | `--skip-urls FILE` | — | URLs/patterns to skip (one per line, `*` wildcards ok) |
 | `--block-analytics` | off | Block analytics/tracking domains in the browser |
+| `--stealth` | off | Patch browser fingerprints on same-domain pages rendered during the crawl; external links are HTTP-checked and unaffected. Does not help against IP-reputation blocks (e.g. iso.org) |
 | `--check-anchors` | off | Validate `#fragment` links against the crawled target page's element ids |
 
 ## `linksanity init`

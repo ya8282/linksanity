@@ -5,10 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2026-09-24
+## [0.4.0] - 2026-09-29
 
 ### Added
 
+- **Config setup path** — `linksanity init config` writes a `linksanity.toml`
+  for local scans; bare `init` offers a workflow or config menu in a TTY.
+  `init workflow` keeps the existing CI setup flow, and existing scripted
+  `init --yes --paths ...` invocations still create the workflow. The config
+  wizard asks for a link style so extensionless page URLs resolve before
+  anchor checks.
+- **Configured scan paths** — `paths` in `linksanity.toml` lets `linksanity scan`
+  run without positional paths. Explicit scan paths replace the configured list.
 - **`LinkStatus.BLOCKED`** — HTTP 401/403 responses are now classified as
   `BLOCKED` instead of `BROKEN`. **Behavior change:** `BLOCKED` does not
   count toward CI exit codes or `FAILING_STATUSES` by default, unlike a 404.

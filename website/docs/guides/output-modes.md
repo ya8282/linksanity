@@ -23,7 +23,7 @@ linksanity is designed to be a clean tool call for AI agents. Use `--format json
 
 | Command | `0` | `1` | `2` | `3` |
 |---|---|---|---|---|
-| `scan`, `crawl` | all links OK | one or more broken links | invocation error | `--github-issue` reporter failed |
+| `scan`, `crawl` | all links OK, or only redirects/skipped/blocked links | one or more broken links, checker errors, or too many redirects | invocation error | `--github-issue` reporter failed |
 | `fix` | nothing to fix | proposals exist (dry run), or were applied (`--write`) | invocation error, or `--write` refused a dirty tree | n/a — `fix` has no `--github-issue` |
 
 A `fix` exit of `1` is not a failure signal by itself — check `auto_applicable` in the JSON output (below) or the diff to see what happened.
@@ -59,7 +59,7 @@ Each item in the output array has:
 | `source_file` | Path to the file the link was found in |
 | `line` | Line number the link appears on |
 | `url` | The link target as written in the source |
-| `status` | `"ok"`, `"broken"`, `"redirect"`, `"too_many_redirects"`, `"skipped"`, or `"error"` |
+| `status` | `"ok"`, `"broken"`, `"blocked"`, `"redirect"`, `"too_many_redirects"`, `"skipped"`, or `"error"` |
 | `link_type` | `"external"`, `"internal"`, `"anchor"`, `"external_anchor"`, or `"non_http_scheme"` |
 | `http_code` | Final HTTP status, or `null` for links that were never fetched |
 | `resolved_url` | Final URL after redirects; `null` when there was no redirect |
@@ -70,13 +70,17 @@ Each item in the output array has:
 
 `linksanity fix --format json` emits a different schema — fix proposals rather than link results. See the [CLI reference](./cli-reference.md) for the `fix` flag table, and [Fixing broken links](../recipes/fixing-broken-links.md) for the proposal fields and the repair loop.
 
+`blocked` means the server refused the request with HTTP 401 or 403. It is
+reported separately from `broken` and does not fail a scan by itself, because
+the response does not confirm that the resource is gone.
+
 ## Exit codes
 
 For `scan` and `crawl`:
 
 | Code | Meaning |
 |---|---|
-| `0` | All links OK (or only plain redirects/skipped) |
+| `0` | All links OK (or only plain redirects, skipped, or blocked links) |
 | `1` | One or more broken links, errors, or redirect loops (`--max-redirects` exceeded) |
 | `2` | Invocation error (bad arguments) |
 | `3` | `--github-issue` reporter itself failed (e.g. missing `GITHUB_TOKEN`, GitHub API error) -- distinct from `1` so "we could not tell you" doesn't look like "nothing to tell you" |

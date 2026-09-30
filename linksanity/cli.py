@@ -34,6 +34,7 @@ from linksanity.init import (
     count_divergence_warning,
     detect_paths,
     measuring_config,
+    render_config_toml,
     render_estimate,
     render_workflow,
 )
@@ -47,6 +48,8 @@ app = typer.Typer(
     help="Detect broken links in Markdown, reStructuredText, and HTML documentation.",
     no_args_is_help=True,
 )
+init_app = typer.Typer(invoke_without_command=True)
+app.add_typer(init_app, name="init")
 
 
 class OutputFormat(Enum):
@@ -223,7 +226,7 @@ def _load_and_validate(
 
 @app.command()
 def scan(
-    paths: list[str] = typer.Argument(..., help="Files, directories, or glob patterns"),  # noqa: B008
+    paths: list[str] | None = typer.Argument(None, help="Files, directories, or glob patterns (defaults to paths in linksanity.toml)"),  # noqa: B008
     config_file: str | None = typer.Option(
         None, "--config", "-c", help="Path to linksanity.toml config file"
     ),
@@ -361,6 +364,14 @@ def scan(
         overrides["skip_urls"] = skip_set
 
     config = _load_and_validate(config_file, _ALL_FORMATS, **overrides)
+    selected_paths = paths if paths else config.paths
+    if not selected_paths:
+        typer.echo(
+            "[linksanity] no paths to scan: pass paths, e.g. linksanity scan docs/, "
+            "or set paths in linksanity.toml",
+            err=True,
+        )
+        raise typer.Exit(2)
 
     if config.js_domains:
         try:
@@ -377,7 +388,7 @@ def scan(
         typer.echo("[linksanity] --repo is required with --github-issue", err=True)
         raise typer.Exit(2)
 
-    queue = asyncio.run(run_scan(paths, config))
+    queue = asyncio.run(run_scan(selected_paths, config))
     results = queue.results()
 
     if config.baseline:
@@ -951,6 +962,29 @@ def _prompt_manual_path(console: Console) -> str | None:
     return answer or None
 
 
+def _init_paths(
+    console: Console, root: Path, paths: list[str] | None
+) -> tuple[list[str], DetectionResult | None]:
+    """Select and validate scan paths for either init destination."""
+    if paths:
+        _validate_path_values(paths)
+        return list(paths), None
+    detection = detect_paths(root)
+    _print_detection_notes(console, detection)
+    if not detection.proposals:
+        manual = _prompt_manual_path(console)
+        if manual is None:
+            typer.echo("[linksanity] no path given; nothing to scan", err=True)
+            raise typer.Exit(2)
+        _validate_path_values([manual])
+        return [manual], detection
+    selected = _select_paths(console, detection.proposals)
+    if not selected:
+        typer.echo("[linksanity] no paths selected; nothing to scan", err=True)
+        raise typer.Exit(2)
+    return selected, detection
+
+
 async def _timed_scan(patterns: list[str], config: Config) -> tuple[LinkQueue, float]:
     """Run `run_scan()` behind a rich.status spinner showing elapsed time.
 
@@ -976,8 +1010,10 @@ async def _timed_scan(patterns: list[str], config: Config) -> tuple[LinkQueue, f
     return await task, elapsed
 
 
-@app.command(name="init")
+@init_app.callback()
+@init_app.command(name="workflow")
 def init_cmd(
+    ctx: typer.Context,
     yes: bool = typer.Option(
         False, "--yes", help="Run non-interactively; requires --paths"
     ),
@@ -1004,6 +1040,31 @@ def init_cmd(
     ),
 ) -> None:
     """Detect documentation paths, measure a link check, and write a CI workflow."""
+    if ctx.invoked_subcommand is not None:
+        return
+    workflow_name_source = ctx.get_parameter_source("workflow_name")
+    routed_to_workflow = (
+        yes
+        or bool(paths)
+        or no_baseline
+        or no_measure
+        or (workflow_name_source is not None and workflow_name_source.name == "COMMANDLINE")
+    )
+    if not routed_to_workflow and _stdin_is_tty():
+        typer.echo("What do you want to set up?")
+        typer.echo("1) GitHub Actions workflow (CI link checking on every PR)")
+        typer.echo("2) linksanity.toml (settings for running linksanity scan yourself)")
+        try:
+            choice = ""
+            while choice not in {"1", "2"}:
+                choice = typer.prompt("Choose 1 or 2").strip()
+                if choice not in {"1", "2"}:
+                    typer.echo("Choose 1 or 2.")
+        except (EOFError, KeyboardInterrupt, typer.Abort) as exc:
+            raise typer.Exit(2) from exc
+        if choice == "2":
+            init_config_cmd(yes=False, paths=None, dry_run=dry_run)
+            return
     console = Console()
 
     _validate_workflow_name(workflow_name)
@@ -1025,26 +1086,7 @@ def init_cmd(
         raise typer.Exit(2)
 
     root = Path.cwd()
-    detection: DetectionResult | None = None
-
-    if paths:
-        _validate_path_values(paths)
-        selected = list(paths)
-    else:
-        detection = detect_paths(root)
-        _print_detection_notes(console, detection)
-        if not detection.proposals:
-            manual = _prompt_manual_path(console)
-            if manual is None:
-                typer.echo("[linksanity] no path given; nothing to scan", err=True)
-                raise typer.Exit(2)
-            _validate_path_values([manual])
-            selected = [manual]
-        else:
-            selected = _select_paths(console, detection.proposals)
-            if not selected:
-                typer.echo("[linksanity] no paths selected; nothing to scan", err=True)
-                raise typer.Exit(2)
+    selected, detection = _init_paths(console, root, paths)
 
     competing = _detect_competing_checkers(root)
     if competing:
@@ -1186,3 +1228,90 @@ def init_cmd(
     typer.echo('  git commit -m "Add linksanity link checking"')
 
     raise typer.Exit(0)
+
+
+@init_app.command(name="config")
+def init_config_cmd(
+    yes: bool = typer.Option(False, "--yes", help="Run non-interactively; requires --paths"),
+    paths: list[str] | None = typer.Option(None, "--paths", help="Paths to scan (skips detection)"),  # noqa: B008
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the config; write nothing"),
+) -> None:
+    """Write linksanity.toml for local scans."""
+    if yes and not paths:
+        typer.echo(
+            "[linksanity] --yes requires --paths (a non-interactive run must state what to scan)",
+            err=True,
+        )
+        raise typer.Exit(2)
+    if not yes and not _stdin_is_tty():
+        typer.echo(
+            "[linksanity] stdin is not a TTY, so interactive prompts would hang; "
+            "rerun with --yes --paths <dir> for a non-interactive run",
+            err=True,
+        )
+        raise typer.Exit(2)
+
+    selected, _ = _init_paths(Console(), Path.cwd(), paths)
+
+    defaults = Config()
+    if yes:
+        check_anchors = defaults.check_anchors
+        check_images = defaults.check_images
+        link_style = defaults.link_style
+        ignore_domains: list[str] = []
+        skip_urls: list[str] = []
+    else:
+        check_anchors = typer.confirm("Check anchors?", default=defaults.check_anchors)
+        check_images = typer.confirm("Check images?", default=defaults.check_images)
+        while True:
+            choice = typer.prompt(
+                "Link style for extensionless links (none/mkdocs/docusaurus/sphinx)",
+                default="none",
+            ).strip().lower()
+            if choice in {"none", "mkdocs", "docusaurus", "sphinx"}:
+                link_style = None if choice == "none" else choice
+                break
+            typer.echo("Choose none, mkdocs, docusaurus, or sphinx.")
+        ignore_domains = [item.strip() for item in typer.prompt("Ignore domains (comma-separated)", default="").split(",") if item.strip()]
+        skip_urls = [item.strip() for item in typer.prompt("Skip URLs (comma-separated)", default="").split(",") if item.strip()]
+
+    target = Path("linksanity.toml")
+    if target.exists() and not dry_run:
+        if yes:
+            typer.echo("[linksanity] linksanity.toml already exists; refusing to overwrite under --yes", err=True)
+            raise typer.Exit(2)
+        if not typer.confirm("linksanity.toml already exists. Overwrite it?", default=False):
+            raise typer.Exit(2)
+
+    rendered = render_config_toml(
+        selected, check_anchors, check_images, ignore_domains, skip_urls, link_style
+    )
+    if dry_run:
+        if target.exists():
+            outcome = "refuse (exit 2)" if yes else "ask before overwriting"
+            typer.echo(f"[linksanity] note: {target} already exists; a real run would {outcome}", err=True)
+        typer.echo(rendered, nl=False)
+        return
+    try:
+        target.write_text(rendered, encoding="utf-8")
+    except OSError as exc:
+        typer.echo(f"[linksanity] cannot write linksanity.toml: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    typer.echo("Wrote linksanity.toml")
+    typer.echo("  linksanity scan")
+    typer.echo("  git add linksanity.toml")
+    typer.echo("The GitHub Actions workflow also reads this linksanity.toml, so these settings apply to CI too.")
+    if not yes and typer.confirm("Run a test scan now with this config?", default=True):
+        config = _load_config_or_exit(target)
+        try:
+            queue = asyncio.run(run_scan(config.paths, config))
+            results = queue.results()
+            broken = sum(result.status in FAILING_STATUSES for result in results)
+            typer.echo(
+                f"Test scan: {len(queue.corpus_files)} files scanned, "
+                f"{len(results)} links checked, {broken} broken."
+            )
+            report(results, config)
+            typer.echo("Run linksanity scan to check again.")
+        except Exception as exc:
+            typer.echo(f"[linksanity] test scan failed: {exc}", err=True)

@@ -268,6 +268,8 @@ class TestScanConfigDiscoveryEndToEnd:
         _write_doc(tmp_path)
         out = tmp_path / "out.json"
         monkeypatch.chdir(tmp_path)
+        # GitHub runners set GITHUB_ACTIONS=true, which auto-enables ::error annotations on stdout.
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
 
         result = runner.invoke(
             app,
